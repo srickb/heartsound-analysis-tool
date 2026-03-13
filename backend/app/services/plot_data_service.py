@@ -3,23 +3,111 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from app.config import UPLOAD_DIR
 from app.services.downsampling import build_raw_series, downsample_minmax_with_bucket_max
-from app.services.file_service import get_file_metadata
+from app.services.file_service import (
+    ECG_PARAMETER_REQUIRED_COLUMNS,
+    HEARTSOUND_PARAMETER_REQUIRED_COLUMNS,
+    get_file_metadata,
+)
 
-PLOT_COLUMNS = [
+HEARTSOUND_PLOT_COLUMNS = [
     "Amplitude",
     "S1-Start_RS_Score",
     "S1-End_RS_Score",
     "S2-Start_RS_Score",
     "S2-End_RS_Score",
 ]
+ECG_PLOT_COLUMNS = [
+    "raw",
+    "major_ps",
+    "major_pe",
+    "major_qrss",
+    "major_qrse",
+    "major_ts",
+    "point_ps",
+    "point_pe",
+    "point_qrss",
+    "point_qrse",
+    "point_ts",
+]
+HEARTSOUND_PARAMETER_COLUMNS = HEARTSOUND_PARAMETER_REQUIRED_COLUMNS
+ECG_PARAMETER_COLUMNS = ECG_PARAMETER_REQUIRED_COLUMNS
 TARGET_POINTS_MIN = 200
 TARGET_POINTS_MAX = 3000
 TARGET_POINTS_DEFAULT = 2400
 RAW_RANGE_LIMIT = 4000
+ECG_RAW_SCALE = 1 / 3
+PARAMETER_SUMMARY_GROUPS: list[tuple[str, str, list[str]]] = [
+    ("timing", "p_rs / qrs_rs / t_rs", ["p_rs", "qrs_rs", "t_rs"]),
+    ("duration", "p_duration / qrs_duration / t_duration", ["p_duration", "qrs_duration", "t_duration"]),
+    ("area", "p_area / qrs_area / t_area", ["p_area", "qrs_area", "t_area"]),
+    (
+        "interval",
+        "pq_interval / st_interval / qq_interval",
+        ["pq_interval", "st_interval", "qq_interval", "pq_segment", "qt_segment", "tp_segment"],
+    ),
+    ("amplitude", "p_amp / qrs_amp / t_amp", ["p_amp", "qrs_amp", "t_amp"]),
+    ("average", "p_avg / qrs_avg / t_avg", ["p_avg", "qrs_avg", "t_avg"]),
+]
+HEARTSOUND_PARAMETER_SUMMARY_GROUPS: list[tuple[str, str, list[str]]] = [
+    (
+        "cycle",
+        "S1_width / S2_width / cycle_duration",
+        ["S1_width", "S2_width", "S1_S2_interval", "S2_S1_interval", "cycle_duration"],
+    ),
+    ("ratio", "sys_dia_ratio / S1_ratio / S2_ratio", ["sys_dia_ratio", "S1_ratio", "S2_ratio"]),
+    ("s1_core", "Peak_S1 / area_S1 / rms_S1", ["Peak_S1", "area_S1", "rms_S1"]),
+    (
+        "s1_detail",
+        "S1_peak_1 ~ S1_area_4",
+        ["S1_peak_1", "S1_area_1", "S1_peak_2", "S1_area_2", "S1_peak_3", "S1_area_3", "S1_peak_4", "S1_area_4"],
+    ),
+    ("s1s2_core", "Peak_S1_S2 / area_S1_S2 / rms_S1_S2", ["Peak_S1_S2", "area_S1_S2", "rms_S1_S2"]),
+    (
+        "s1s2_detail",
+        "S1_S2_peak_1 ~ S1_S2_area_4",
+        [
+            "S1_S2_peak_1",
+            "S1_S2_area_1",
+            "S1_S2_peak_2",
+            "S1_S2_area_2",
+            "S1_S2_peak_3",
+            "S1_S2_area_3",
+            "S1_S2_peak_4",
+            "S1_S2_area_4",
+        ],
+    ),
+    ("s2_core", "Peak_S2 / area_S2 / rms_S2", ["Peak_S2", "area_S2", "rms_S2"]),
+    (
+        "s2_detail",
+        "S2_peak_1 ~ S2_area_4",
+        ["S2_peak_1", "S2_area_1", "S2_peak_2", "S2_area_2", "S2_peak_3", "S2_area_3", "S2_peak_4", "S2_area_4"],
+    ),
+    ("s2s1_core", "Peak_S2_S1 / area_S2_S1 / rms_S2_S1", ["Peak_S2_S1", "area_S2_S1", "rms_S2_S1"]),
+    (
+        "s2s1_detail",
+        "S2_S1_peak_1 ~ S2_S1_area_4",
+        [
+            "S2_S1_peak_1",
+            "S2_S1_area_1",
+            "S2_S1_peak_2",
+            "S2_S1_area_2",
+            "S2_S1_peak_3",
+            "S2_S1_area_3",
+            "S2_S1_peak_4",
+            "S2_S1_area_4",
+        ],
+    ),
+    (
+        "comparative",
+        "S1_S2_peak_ratio / sys_dia_peak_ratio",
+        ["S1_S2_peak_ratio", "sys_dia_peak_ratio", "S1_S2_area_ratio", "sys_dia_area_ratio"],
+    ),
+]
 
 
 class PlotDataNotFoundError(Exception):
@@ -89,7 +177,84 @@ def _resolve_range(
     return clamped_start, clamped_end
 
 
-def _load_dataframe(file_id: str, stored_name: str, extension: str) -> pd.DataFrame:
+def _sanitize_numeric(values: np.ndarray) -> list[float]:
+    return np.nan_to_num(values.astype(float, copy=False), nan=0.0, posinf=0.0, neginf=0.0).tolist()
+
+
+def _safe_max(values: np.ndarray) -> float:
+    if values.size == 0 or np.all(np.isnan(values)):
+        return 0.0
+    return float(np.nanmax(values))
+
+
+def _safe_value(value: float) -> float:
+    if np.isfinite(value):
+        return float(value)
+    return 0.0
+
+
+def _downsample_generic_series(
+    start_index: int,
+    amplitude: np.ndarray,
+    marker_series: dict[str, np.ndarray],
+    target_points: int,
+) -> tuple[dict[str, list[float] | list[int]], bool]:
+    point_count = len(amplitude)
+    if point_count == 0:
+      return {"x": [], "amplitude": [], **{key: [] for key in marker_series}}, False
+
+    target = max(2, target_points)
+    if point_count <= target:
+        x = list(range(start_index, start_index + point_count))
+        return {
+            "x": x,
+            "amplitude": _sanitize_numeric(amplitude),
+            **{key: _sanitize_numeric(values) for key, values in marker_series.items()},
+        }, False
+
+    amplitude = amplitude.astype(float, copy=False)
+    bucket_count = max(1, target // 2)
+    bucket_size = int(np.ceil(point_count / bucket_count))
+    marker_matrix = {key: values.astype(float, copy=False) for key, values in marker_series.items()}
+
+    out_x: list[int] = []
+    out_amp: list[float] = []
+    out_markers: dict[str, list[float]] = {key: [] for key in marker_series}
+
+    for bucket_start in range(0, point_count, bucket_size):
+        bucket_end = min(point_count, bucket_start + bucket_size)
+        amp_bucket = amplitude[bucket_start:bucket_end]
+        marker_buckets = {key: values[bucket_start:bucket_end] for key, values in marker_matrix.items()}
+
+        if amp_bucket.size == 0:
+            continue
+
+        if np.all(np.isnan(amp_bucket)):
+            picked_positions = [0]
+        else:
+            min_position = int(np.nanargmin(amp_bucket))
+            max_position = int(np.nanargmax(amp_bucket))
+            picked_positions = [min_position] if min_position == max_position else sorted([min_position, max_position])
+
+        marker_maxima = {key: _safe_max(values) for key, values in marker_buckets.items()}
+
+        for local_position in picked_positions:
+            global_position = bucket_start + local_position
+            out_x.append(start_index + global_position)
+            out_amp.append(_safe_value(float(amp_bucket[local_position])))
+            for key, max_value in marker_maxima.items():
+                out_markers[key].append(max_value)
+
+    return {"x": out_x, "amplitude": out_amp, **out_markers}, True
+
+
+def _load_dataframe(
+    file_id: str,
+    stored_name: str,
+    extension: str,
+    workspace_kind: str,
+    file_role: str,
+) -> pd.DataFrame:
     cached = _dataframe_cache.get(file_id)
     if cached is not None:
         return cached
@@ -98,17 +263,28 @@ def _load_dataframe(file_id: str, stored_name: str, extension: str) -> pd.DataFr
     if not path.exists():
         raise PlotDataNotFoundError("stored file not found on server")
 
+    if file_role == "data" and workspace_kind == "heartsound":
+        plot_columns = HEARTSOUND_PLOT_COLUMNS
+    elif file_role == "parameter" and workspace_kind == "heartsound":
+        plot_columns = HEARTSOUND_PARAMETER_COLUMNS
+    elif file_role == "data" and workspace_kind == "ecg":
+        plot_columns = ECG_PLOT_COLUMNS
+    elif file_role == "parameter" and workspace_kind == "ecg":
+        plot_columns = ECG_PARAMETER_COLUMNS
+    else:
+        raise PlotDataValidationError("unsupported workspace kind or file role")
+
     try:
         if extension == ".csv":
-            dataframe = pd.read_csv(path, usecols=PLOT_COLUMNS)
+            dataframe = pd.read_csv(path, usecols=plot_columns)
         elif extension == ".xlsx":
-            dataframe = pd.read_excel(path, usecols=PLOT_COLUMNS)
+            dataframe = pd.read_excel(path, usecols=plot_columns)
         else:
             raise PlotDataValidationError(f"unsupported stored extension: {extension}")
     except Exception as error:
         raise PlotDataValidationError("failed to load stored file for plot data") from error
 
-    for column in PLOT_COLUMNS:
+    for column in plot_columns:
         if column not in dataframe.columns:
             raise PlotDataValidationError(f"stored file missing column: {column}")
         dataframe[column] = pd.to_numeric(dataframe[column], errors="coerce")
@@ -125,44 +301,216 @@ def _build_plot_payload(
     dataframe: pd.DataFrame,
     target_points: int,
     mode: str,
+    workspace_kind: str,
 ) -> dict[str, Any]:
     segment = dataframe.iloc[start_index : end_index + 1]
-    amplitude = segment["Amplitude"].to_numpy()
-    s1_start = segment["S1-Start_RS_Score"].to_numpy()
-    s1_end = segment["S1-End_RS_Score"].to_numpy()
-    s2_start = segment["S2-Start_RS_Score"].to_numpy()
-    s2_end = segment["S2-End_RS_Score"].to_numpy()
+    if workspace_kind == "heartsound":
+        amplitude = segment["Amplitude"].to_numpy()
+        s1_start = segment["S1-Start_RS_Score"].to_numpy()
+        s1_end = segment["S1-End_RS_Score"].to_numpy()
+        s2_start = segment["S2-Start_RS_Score"].to_numpy()
+        s2_end = segment["S2-End_RS_Score"].to_numpy()
 
-    point_count = len(segment.index)
-    should_downsample = mode == "overview" or point_count > min(target_points, RAW_RANGE_LIMIT)
-    if should_downsample:
-        series, is_downsampled = downsample_minmax_with_bucket_max(
+        point_count = len(segment.index)
+        should_downsample = mode == "overview" or point_count > min(target_points, RAW_RANGE_LIMIT)
+        if should_downsample:
+            series, is_downsampled = downsample_minmax_with_bucket_max(
+                start_index,
+                amplitude,
+                s1_start,
+                s1_end,
+                s2_start,
+                s2_end,
+                target_points,
+            )
+        else:
+            series = build_raw_series(start_index, amplitude, s1_start, s1_end, s2_start, s2_end)
+            is_downsampled = False
+
+        return {
+            "fileId": file_id,
+            "workspaceKind": workspace_kind,
+            "originalRowCount": original_row_count,
+            "returnedPointCount": len(series.x),
+            "startIndex": start_index,
+            "endIndex": end_index,
+            "isDownsampled": is_downsampled,
+            "x": series.x,
+            "amplitude": series.amplitude,
+            "s1Start": series.s1_start,
+            "s1End": series.s1_end,
+            "s2Start": series.s2_start,
+            "s2End": series.s2_end,
+            "majorPs": [],
+            "majorPe": [],
+            "majorQrss": [],
+            "majorQrse": [],
+            "majorTs": [],
+            "pointPs": [],
+            "pointPe": [],
+            "pointQrss": [],
+            "pointQrse": [],
+            "pointTs": [],
+        }
+
+    if workspace_kind == "ecg":
+        amplitude = segment["raw"].to_numpy() * ECG_RAW_SCALE
+        marker_series = {
+            "majorPs": segment["major_ps"].to_numpy(),
+            "majorPe": segment["major_pe"].to_numpy(),
+            "majorQrss": segment["major_qrss"].to_numpy(),
+            "majorQrse": segment["major_qrse"].to_numpy(),
+            "majorTs": segment["major_ts"].to_numpy(),
+            "pointPs": segment["point_ps"].to_numpy(),
+            "pointPe": segment["point_pe"].to_numpy(),
+            "pointQrss": segment["point_qrss"].to_numpy(),
+            "pointQrse": segment["point_qrse"].to_numpy(),
+            "pointTs": segment["point_ts"].to_numpy(),
+        }
+        point_count = len(segment.index)
+        should_downsample = mode == "overview" or point_count > min(target_points, RAW_RANGE_LIMIT)
+        series, is_downsampled = _downsample_generic_series(
             start_index,
             amplitude,
-            s1_start,
-            s1_end,
-            s2_start,
-            s2_end,
-            target_points,
+            marker_series,
+            target_points if should_downsample else max(point_count, 2),
         )
-    else:
-        series = build_raw_series(start_index, amplitude, s1_start, s1_end, s2_start, s2_end)
-        is_downsampled = False
+        return {
+            "fileId": file_id,
+            "workspaceKind": workspace_kind,
+            "originalRowCount": original_row_count,
+            "returnedPointCount": len(series["x"]),
+            "startIndex": start_index,
+            "endIndex": end_index,
+            "isDownsampled": is_downsampled,
+            "x": series["x"],
+            "amplitude": series["amplitude"],
+            "s1Start": [],
+            "s1End": [],
+            "s2Start": [],
+            "s2End": [],
+            "majorPs": series["majorPs"],
+            "majorPe": series["majorPe"],
+            "majorQrss": series["majorQrss"],
+            "majorQrse": series["majorQrse"],
+            "majorTs": series["majorTs"],
+            "pointPs": series["pointPs"],
+            "pointPe": series["pointPe"],
+            "pointQrss": series["pointQrss"],
+            "pointQrse": series["pointQrse"],
+            "pointTs": series["pointTs"],
+        }
+
+    raise PlotDataValidationError("unsupported workspace kind")
+
+
+def _to_summary_metric(segment: pd.DataFrame, column: str) -> dict[str, Any]:
+    series = pd.to_numeric(segment[column], errors="coerce")
+    values = series.to_numpy(dtype=float)
+    finite_values = values[np.isfinite(values)]
+    if finite_values.size == 0:
+        return {"key": column, "label": column, "mean": 0.0, "min": 0.0, "max": 0.0}
 
     return {
-        "fileId": file_id,
-        "originalRowCount": original_row_count,
-        "returnedPointCount": len(series.x),
-        "startIndex": start_index,
-        "endIndex": end_index,
-        "isDownsampled": is_downsampled,
-        "x": series.x,
-        "amplitude": series.amplitude,
-        "s1Start": series.s1_start,
-        "s1End": series.s1_end,
-        "s2Start": series.s2_start,
-        "s2End": series.s2_end,
+        "key": column,
+        "label": column,
+        "mean": float(np.mean(finite_values)),
+        "min": float(np.min(finite_values)),
+        "max": float(np.max(finite_values)),
     }
+
+
+def _build_summary_groups(
+    segment: pd.DataFrame,
+    group_spec: list[tuple[str, str, list[str]]],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "key": key,
+            "label": label,
+            "metrics": [_to_summary_metric(segment, column) for column in columns],
+        }
+        for key, label, columns in group_spec
+    ]
+
+
+def get_parameter_summary(
+    file_id: str,
+    start: int | None,
+    end: int | None,
+) -> dict[str, Any]:
+    metadata = get_file_metadata(file_id)
+    if metadata is None:
+        raise PlotDataNotFoundError("file metadata not found")
+
+    workspace_kind = str(metadata.get("workspaceKind") or "heartsound")
+    file_role = str(metadata.get("fileRole") or "data")
+    if file_role != "parameter":
+        raise PlotDataValidationError("parameter summary is only available for parameter files")
+
+    row_count = int(metadata["rowCount"])
+    requested_start = max(0, int(start if start is not None else 0))
+    requested_end = max(requested_start, int(end if end is not None else requested_start))
+    cache_key = ("parameter-summary", file_id, requested_start, requested_end)
+    cached_payload = _plot_cache.get(cache_key)
+    if cached_payload is not None:
+        return cached_payload
+
+    stored_name = str(metadata["storedName"])
+    extension = str(metadata["extension"]).lower()
+    dataframe = _load_dataframe(file_id, stored_name, extension, workspace_kind, file_role)
+    if workspace_kind == "ecg":
+        time_series = pd.to_numeric(dataframe["time"], errors="coerce")
+        segment = dataframe.loc[(time_series >= requested_start) & (time_series <= requested_end)]
+        group_spec = PARAMETER_SUMMARY_GROUPS
+        cycles: list[dict[str, Any]] = []
+    elif workspace_kind == "heartsound":
+        cycle_start = pd.to_numeric(dataframe["S1_start"], errors="coerce")
+        cycle_end = pd.to_numeric(dataframe["next_S1_start"], errors="coerce")
+        fallback_end = pd.to_numeric(dataframe["S2_end"], errors="coerce")
+        resolved_cycle_end = cycle_end.where(np.isfinite(cycle_end), fallback_end)
+        segment = dataframe.loc[(cycle_start <= requested_end) & (resolved_cycle_end >= requested_start)]
+        group_spec = HEARTSOUND_PARAMETER_SUMMARY_GROUPS
+        cycles = []
+        for row_index, (_, row) in enumerate(segment.iterrows()):
+            row_frame = pd.DataFrame([row])
+            cycle_index_raw = row.get("Cycle_Index", row_index + 1)
+            cycle_index = int(cycle_index_raw) if pd.notna(cycle_index_raw) else row_index + 1
+            cycle_start_value = row.get("S1_start", requested_start)
+            cycle_end_value = row.get("next_S1_start", row.get("S2_end", requested_end))
+            try:
+                cycle_start_int = int(float(cycle_start_value))
+            except Exception:
+                cycle_start_int = requested_start
+            try:
+                cycle_end_int = int(float(cycle_end_value))
+            except Exception:
+                cycle_end_int = requested_end
+            cycles.append(
+                {
+                    "cycleIndex": cycle_index,
+                    "startIndex": cycle_start_int,
+                    "endIndex": max(cycle_start_int, cycle_end_int),
+                    "groups": _build_summary_groups(row_frame, HEARTSOUND_PARAMETER_SUMMARY_GROUPS),
+                }
+            )
+    else:
+        raise PlotDataValidationError("unsupported workspace kind for parameter summary")
+
+    groups = _build_summary_groups(segment, group_spec)
+
+    payload = {
+        "fileId": file_id,
+        "workspaceKind": workspace_kind,
+        "fileRole": file_role,
+        "rowCount": row_count,
+        "startIndex": requested_start,
+        "endIndex": requested_end,
+        "groups": groups,
+        "cycles": cycles,
+    }
+    _plot_cache.set(cache_key, payload)
+    return payload
 
 
 def get_plot_data(
@@ -197,7 +545,11 @@ def get_plot_data(
 
     stored_name = str(metadata["storedName"])
     extension = str(metadata["extension"]).lower()
-    dataframe = _load_dataframe(file_id, stored_name, extension)
+    workspace_kind = str(metadata.get("workspaceKind") or "heartsound")
+    file_role = str(metadata.get("fileRole") or "data")
+    if file_role != "data":
+        raise PlotDataValidationError("plot data is only available for data files")
+    dataframe = _load_dataframe(file_id, stored_name, extension, workspace_kind, file_role)
 
     payload = _build_plot_payload(
         file_id=file_id,
@@ -207,6 +559,7 @@ def get_plot_data(
         dataframe=dataframe,
         target_points=resolved_target_points,
         mode=mode,
+        workspace_kind=workspace_kind,
     )
 
     _plot_cache.set(cache_key, payload)

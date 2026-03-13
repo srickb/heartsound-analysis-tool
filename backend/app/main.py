@@ -32,6 +32,7 @@ from app.services.plot_data_service import (
     PlotDataNotFoundError,
     PlotDataValidationError,
     get_plot_data,
+    get_parameter_summary,
 )
 
 
@@ -189,12 +190,19 @@ def logout(request: Request, response: Response) -> dict[str, str]:
 
 
 @app.get("/api/files")
-def get_files(request: Request) -> dict[str, Any]:
+def get_files(
+    request: Request,
+    workspaceKind: str | None = None,
+    fileRole: str | None = None,
+) -> dict[str, Any]:
     try:
         require_viewer_access(_session_token(request))
+        files = list_files(workspaceKind, fileRole)
     except AuthError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
-    return {"files": list_files()}
+    except UploadValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"files": files}
 
 
 @app.get("/api/files/{file_id}/metadata")
@@ -210,7 +218,11 @@ def get_file(file_id: str, request: Request) -> dict[str, Any]:
 
 
 async def _handle_upload_request(
-    files: list[UploadFile], relative_paths: list[str] | None, ignore_unsupported: bool
+    files: list[UploadFile],
+    relative_paths: list[str] | None,
+    ignore_unsupported: bool,
+    workspace_kind: str,
+    file_role: str,
 ) -> dict[str, Any]:
     uploaded: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
@@ -222,7 +234,7 @@ async def _handle_upload_request(
             relative_path = relative_paths[index]
 
         try:
-            uploaded_file = await save_uploaded_file(upload, relative_path)
+            uploaded_file = await save_uploaded_file(upload, relative_path, workspace_kind, file_role)
             uploaded.append(uploaded_file)
         except UploadValidationError as error:
             record = {
@@ -233,11 +245,11 @@ async def _handle_upload_request(
                 ignored.append(record)
             else:
                 errors.append(record)
-        except Exception:
+        except Exception as error:
             errors.append(
                 {
                     "fileName": upload.filename or "unknown",
-                    "message": "unexpected error while processing file",
+                    "message": f"unexpected error while processing file: {error}",
                 }
             )
 
@@ -259,6 +271,8 @@ async def upload_files(
     request: Request,
     files: list[UploadFile] = File(...),
     relative_paths: list[str] | None = Form(None),
+    workspace_kind: str = Form("heartsound"),
+    file_role: str = Form("data"),
 ) -> dict[str, Any]:
     try:
         require_viewer_access(_session_token(request))
@@ -266,7 +280,13 @@ async def upload_files(
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     if not files:
         raise HTTPException(status_code=400, detail="no files provided")
-    return await _handle_upload_request(files, relative_paths, ignore_unsupported=False)
+    return await _handle_upload_request(
+        files,
+        relative_paths,
+        ignore_unsupported=False,
+        workspace_kind=workspace_kind,
+        file_role=file_role,
+    )
 
 
 @app.post("/api/upload/folder")
@@ -274,6 +294,8 @@ async def upload_folder(
     request: Request,
     files: list[UploadFile] = File(...),
     relative_paths: list[str] | None = Form(None),
+    workspace_kind: str = Form("heartsound"),
+    file_role: str = Form("data"),
 ) -> dict[str, Any]:
     try:
         require_viewer_access(_session_token(request))
@@ -281,7 +303,13 @@ async def upload_folder(
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     if not files:
         raise HTTPException(status_code=400, detail="no files provided")
-    return await _handle_upload_request(files, relative_paths, ignore_unsupported=True)
+    return await _handle_upload_request(
+        files,
+        relative_paths,
+        ignore_unsupported=True,
+        workspace_kind=workspace_kind,
+        file_role=file_role,
+    )
 
 
 class DeleteFilesRequest(BaseModel):
@@ -321,6 +349,24 @@ def get_file_plot_data(
             panel_width=panelWidth,
             target_points=targetPoints,
         )
+    except PlotDataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PlotDataValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/files/{file_id}/parameter-summary")
+def get_file_parameter_summary(
+    file_id: str,
+    request: Request,
+    start: int | None = None,
+    end: int | None = None,
+) -> dict[str, Any]:
+    try:
+        require_viewer_access(_session_token(request))
+        return get_parameter_summary(file_id=file_id, start=start, end=end)
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except PlotDataNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except PlotDataValidationError as error:

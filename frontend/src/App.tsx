@@ -6,8 +6,22 @@ type SplitMode = 1 | 2 | 4;
 type PanelId = 1 | 2 | 3 | 4;
 type HealthStatus = "checking" | "connected" | "failed";
 type PlotMode = "overview" | "range";
-type SeriesKey = "amplitude" | "s1Start" | "s1End" | "s2Start" | "s2End";
+type FileRole = "data" | "parameter";
+type EcgMarkerMode = "major" | "point";
+type SeriesKey =
+  | "amplitude"
+  | "s1Start"
+  | "s1End"
+  | "s2Start"
+  | "s2End"
+  | "majorPs"
+  | "majorPe"
+  | "majorQrss"
+  | "majorQrse"
+  | "majorTs"
+  | "pointPs";
 type AccessMode = "open" | "code";
+type WorkspaceKind = "heartsound" | "ecg";
 
 interface VisibleSeries {
   amplitude: boolean;
@@ -15,18 +29,29 @@ interface VisibleSeries {
   s1End: boolean;
   s2Start: boolean;
   s2End: boolean;
+  majorPs: boolean;
+  majorPe: boolean;
+  majorQrss: boolean;
+  majorQrse: boolean;
+  majorTs: boolean;
+  pointPs: boolean;
 }
 
 interface PanelStyleOptions {
   amplitudeLineWidth: number;
   rsBarOpacity: number;
   yAxisAutoScale: boolean;
+  ecgMarkerMode: EcgMarkerMode;
 }
 
 interface PanelState {
   panelId: PanelId;
+  workspaceKind: WorkspaceKind;
   fileId: string | null;
   fileName: string | null;
+  parameterFileId: string | null;
+  parameterFileName: string | null;
+  showParameterSummary: boolean;
   totalRows: number | null;
   previousRangeStart: number | null;
   previousRangeEnd: number | null;
@@ -40,6 +65,8 @@ interface UploadedFileMetadata {
   fileId: string;
   originalName: string;
   relativePath: string | null;
+  workspaceKind: WorkspaceKind;
+  fileRole: FileRole;
   uploadedAt: string;
   rowCount: number;
   fileSizeBytes: number;
@@ -53,6 +80,7 @@ interface UploadResult {
 
 interface PlotDataPayload {
   fileId: string;
+  workspaceKind: WorkspaceKind;
   originalRowCount: number;
   returnedPointCount: number;
   startIndex: number;
@@ -64,11 +92,60 @@ interface PlotDataPayload {
   s1End: number[];
   s2Start: number[];
   s2End: number[];
+  majorPs: number[];
+  majorPe: number[];
+  majorQrss: number[];
+  majorQrse: number[];
+  majorTs: number[];
+  pointPs: number[];
+  pointPe: number[];
+  pointQrss: number[];
+  pointQrse: number[];
+  pointTs: number[];
 }
 
 interface PanelPlotState {
   overview: PlotDataPayload | null;
   current: PlotDataPayload | null;
+  loading: boolean;
+  error: string | null;
+}
+
+interface ParameterMetricSummary {
+  key: string;
+  label: string;
+  mean: number;
+  min: number;
+  max: number;
+}
+
+interface ParameterSummaryGroup {
+  key: string;
+  label: string;
+  metrics: ParameterMetricSummary[];
+}
+
+interface ParameterSummaryCycle {
+  cycleIndex: number;
+  startIndex: number;
+  endIndex: number;
+  groups: ParameterSummaryGroup[];
+}
+
+interface ParameterSummaryPayload {
+  fileId: string;
+  workspaceKind: WorkspaceKind;
+  fileRole: FileRole;
+  rowCount: number;
+  startIndex: number;
+  endIndex: number;
+  groups: ParameterSummaryGroup[];
+  cycles?: ParameterSummaryCycle[];
+}
+
+interface PanelParameterState {
+  summary: ParameterSummaryPayload | null;
+  selectedCycleIndex: number | null;
   loading: boolean;
   error: string | null;
 }
@@ -79,6 +156,7 @@ interface SettingsDraft {
   amplitudeLineWidth: string;
   rsBarOpacity: string;
   yAxisAutoScale: boolean;
+  ecgMarkerMode: EcgMarkerMode;
 }
 
 interface AuthState {
@@ -89,26 +167,46 @@ interface AuthState {
   isAdmin: boolean;
 }
 
+interface AppState {
+  splitMode: SplitMode;
+  activePanelId: PanelId;
+  activeFileRole: FileRole;
+  panels: PanelState[];
+  panelPlots: Record<PanelId, PanelPlotState>;
+  panelParameters: Record<PanelId, PanelParameterState>;
+  filesByWorkspace: Record<WorkspaceKind, UploadedFileMetadata[]>;
+  filesLoadingByWorkspace: Record<WorkspaceKind, boolean>;
+  uploadingByWorkspace: Record<WorkspaceKind, boolean>;
+  searchText: string;
+  statusMessage: string;
+  selectedDeleteIds: string[];
+}
+
 interface PanelCardProps {
+  workspaceKind: WorkspaceKind;
+  splitMode: SplitMode;
   panel: PanelState;
   plotState: PanelPlotState;
+  parameterState: PanelParameterState;
   isActive: boolean;
   onActivate: (panelId: PanelId) => void;
   onToggleSeries: (panelId: PanelId, key: SeriesKey) => void;
+  onToggleParameterSummary: (panelId: PanelId) => void;
   onOpenSettings: (panelId: PanelId) => void;
   onResetPanel: (panelId: PanelId) => void;
   onSliderRangeCommit: (panelId: PanelId, start: number, end: number) => void;
+  onSelectCycle: (panelId: PanelId, cycleIndex: number) => void;
 }
 
 const PANEL_IDS_BY_MODE: Record<SplitMode, PanelId[]> = {
   1: [1],
   2: [1, 2],
-  4: [1, 2, 3, 4]
+  4: [1, 2]
 };
 
-const SPLIT_BUTTONS: SplitMode[] = [1, 2, 4];
+const SPLIT_BUTTONS: SplitMode[] = [1, 2];
 
-const SERIES_ITEMS: Array<{ key: SeriesKey; label: string; color: string }> = [
+const HEARTSOUND_SERIES_ITEMS: Array<{ key: SeriesKey; label: string; color: string }> = [
   { key: "amplitude", label: "Amplitude", color: "#79c0ff" },
   { key: "s1Start", label: "S1-Start_RS_Score", color: "#2ea043" },
   { key: "s1End", label: "S1-End_RS_Score", color: "#d29922" },
@@ -116,24 +214,78 @@ const SERIES_ITEMS: Array<{ key: SeriesKey; label: string; color: string }> = [
   { key: "s2End", label: "S2-End_RS_Score", color: "#f85149" }
 ];
 
+const ECG_SERIES_COLORS = {
+  amplitude: "#79c0ff",
+  majorPs: "#00c853",
+  majorPe: "#2979ff",
+  majorQrss: "#ff6d00",
+  majorQrse: "#aa00ff",
+  majorTs: "#00bcd4",
+  pointPs: "#ff1744",
+  pointPe: "#00b0ff",
+  pointQrss: "#ffab00",
+  pointQrse: "#d500f9",
+  pointTs: "#1de9b6"
+} as const;
+
+const ECG_SERIES_ITEMS_BY_MODE: Record<EcgMarkerMode, Array<{ key: SeriesKey; label: string; color: string }>> = {
+  major: [
+    { key: "amplitude", label: "raw", color: ECG_SERIES_COLORS.amplitude },
+    { key: "majorPs", label: "major_ps", color: ECG_SERIES_COLORS.majorPs },
+    { key: "majorPe", label: "major_pe", color: ECG_SERIES_COLORS.majorPe },
+    { key: "majorQrss", label: "major_qrss", color: ECG_SERIES_COLORS.majorQrss },
+    { key: "majorQrse", label: "major_qrse", color: ECG_SERIES_COLORS.majorQrse },
+    { key: "majorTs", label: "major_ts", color: ECG_SERIES_COLORS.majorTs }
+  ],
+  point: [
+    { key: "amplitude", label: "raw", color: ECG_SERIES_COLORS.amplitude },
+    { key: "majorPs", label: "point_ps", color: ECG_SERIES_COLORS.pointPs },
+    { key: "majorPe", label: "point_pe", color: ECG_SERIES_COLORS.pointPe },
+    { key: "majorQrss", label: "point_qrss", color: ECG_SERIES_COLORS.pointQrss },
+    { key: "majorQrse", label: "point_qrse", color: ECG_SERIES_COLORS.pointQrse },
+    { key: "majorTs", label: "point_ts", color: ECG_SERIES_COLORS.pointTs }
+  ]
+};
+
 const DEFAULT_VISIBLE_SERIES: VisibleSeries = {
   amplitude: true,
   s1Start: true,
   s1End: true,
   s2Start: true,
-  s2End: true
+  s2End: true,
+  majorPs: true,
+  majorPe: true,
+  majorQrss: true,
+  majorQrse: true,
+  majorTs: true,
+  pointPs: true
 };
 
 const DEFAULT_STYLE_OPTIONS: PanelStyleOptions = {
   amplitudeLineWidth: 1.6,
   rsBarOpacity: 0.9,
-  yAxisAutoScale: true
+  yAxisAutoScale: true,
+  ecgMarkerMode: "point"
 };
 
-const createDefaultPanelState = (panelId: PanelId): PanelState => ({
+const FILE_ROLE_TABS: Array<{ key: FileRole; label: string }> = [
+  { key: "data", label: "Data" },
+  { key: "parameter", label: "Parameter" }
+];
+const FILE_NAME_COLLATOR = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base"
+});
+
+const createDefaultPanelState = (panelId: PanelId, workspaceKind?: WorkspaceKind): PanelState => ({
   panelId,
+  workspaceKind:
+    workspaceKind ?? (panelId === 2 ? "ecg" : "heartsound"),
   fileId: null,
   fileName: null,
+  parameterFileId: null,
+  parameterFileName: null,
+  showParameterSummary: true,
   totalRows: null,
   previousRangeStart: null,
   previousRangeEnd: null,
@@ -150,19 +302,19 @@ const createEmptyPlotState = (): PanelPlotState => ({
   error: null
 });
 
-const INITIAL_PANELS: PanelState[] = [
-  createDefaultPanelState(1),
-  createDefaultPanelState(2),
-  createDefaultPanelState(3),
-  createDefaultPanelState(4)
-];
+const createEmptyParameterState = (): PanelParameterState => ({
+  summary: null,
+  selectedCycleIndex: null,
+  loading: false,
+  error: null
+});
 
-const INITIAL_PANEL_PLOTS: Record<PanelId, PanelPlotState> = {
-  1: createEmptyPlotState(),
-  2: createEmptyPlotState(),
-  3: createEmptyPlotState(),
-  4: createEmptyPlotState()
-};
+const INITIAL_PANELS: PanelState[] = [
+  createDefaultPanelState(1, "heartsound"),
+  createDefaultPanelState(2, "ecg"),
+  createDefaultPanelState(3, "heartsound"),
+  createDefaultPanelState(4, "ecg")
+];
 
 const INITIAL_AUTH_STATE: AuthState = {
   accessMode: "open",
@@ -173,13 +325,72 @@ const INITIAL_AUTH_STATE: AuthState = {
 };
 
 const PANEL_TARGET_POINTS = 2400;
-const DEFAULT_INITIAL_RANGE_SIZE = 30000;
+const HEARTSOUND_INITIAL_RANGE_SIZE = 30000;
+const ECG_INITIAL_RANGE_SIZE = 1000;
 const RS_SCORE_AXIS_MIN = 0;
-const RS_SCORE_AXIS_MAX = 80;
-const RS_BAR_WIDTH = 1.8;
+const HEARTSOUND_SECONDARY_AXIS_MAX = 100;
+const ECG_SECONDARY_AXIS_MAX = 30;
+const ECG_POINT_SECONDARY_AXIS_MAX = 1;
+const HEARTSOUND_RS_BAR_WIDTH = 0.9;
+const ECG_BAR_WIDTH = 1.8;
+const RAW_SERIES_Z = 1;
+const BAR_SERIES_Z = 3;
 const QUICK_RANGE_SHIFT_STEP = 30000;
+const ECG_RANGE_SHIFT_STEP = 200;
 const KEYBOARD_RANGE_SHIFT_STEP = 3000;
 const QUICK_RANGE_PRESETS = [15000, 30000, 50000] as const;
+const WORKSPACE_TABS: Array<{ key: WorkspaceKind; label: string; title: string; emptyLabel: string }> = [
+  {
+    key: "heartsound",
+    label: "HeartSound",
+    title: "HeartSound Analysis Tool",
+    emptyLabel: "No uploaded heart sound files"
+  },
+  {
+    key: "ecg",
+    label: "ECG",
+    title: "ECG Analysis Tool",
+    emptyLabel: "No uploaded ECG files"
+  }
+];
+
+const createAppState = (): AppState => ({
+  splitMode: 1,
+  activePanelId: 1,
+  activeFileRole: "data",
+  panels: INITIAL_PANELS.map((panel) => ({
+    ...panel,
+    visibleSeries: { ...panel.visibleSeries },
+    styleOptions: { ...panel.styleOptions }
+  })),
+  panelPlots: {
+    1: createEmptyPlotState(),
+    2: createEmptyPlotState(),
+    3: createEmptyPlotState(),
+    4: createEmptyPlotState()
+  },
+  panelParameters: {
+    1: createEmptyParameterState(),
+    2: createEmptyParameterState(),
+    3: createEmptyParameterState(),
+    4: createEmptyParameterState()
+  },
+  filesByWorkspace: {
+    heartsound: [],
+    ecg: []
+  },
+  filesLoadingByWorkspace: {
+    heartsound: false,
+    ecg: false
+  },
+  uploadingByWorkspace: {
+    heartsound: false,
+    ecg: false
+  },
+  searchText: "",
+  statusMessage: "",
+  selectedDeleteIds: []
+});
 
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -193,6 +404,9 @@ const parseNumericInput = (value: string): number | null => {
   }
   return Math.round(parsed);
 };
+
+const getSeriesItemsForWorkspace = (workspaceKind: WorkspaceKind, ecgMarkerMode: EcgMarkerMode) =>
+  workspaceKind === "ecg" ? ECG_SERIES_ITEMS_BY_MODE[ecgMarkerMode] : HEARTSOUND_SERIES_ITEMS;
 
 const extractErrorMessage = (payload: unknown): string => {
   if (typeof payload === "string") {
@@ -230,8 +444,106 @@ const isTypingTarget = (target: EventTarget | null): boolean => {
 };
 
 const formatRowNumber = (value: number): string => value.toLocaleString();
-const getInitialRangeEnd = (rowCount: number): number =>
-  Math.min(Math.max(rowCount - 1, 0), DEFAULT_INITIAL_RANGE_SIZE);
+const getInitialRangeEnd = (rowCount: number, workspaceKind: WorkspaceKind): number =>
+  Math.min(
+    Math.max(rowCount - 1, 0),
+    workspaceKind === "ecg" ? ECG_INITIAL_RANGE_SIZE : HEARTSOUND_INITIAL_RANGE_SIZE
+  );
+const getRangeShiftStep = (workspaceKind: WorkspaceKind): number =>
+  workspaceKind === "ecg" ? ECG_RANGE_SHIFT_STEP : QUICK_RANGE_SHIFT_STEP;
+const getKeyboardRangeShiftStep = (workspaceKind: WorkspaceKind): number =>
+  workspaceKind === "ecg" ? ECG_RANGE_SHIFT_STEP : KEYBOARD_RANGE_SHIFT_STEP;
+const formatMetricValue = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+  const absValue = Math.abs(value);
+  if (absValue >= 1000) {
+    return value.toFixed(0);
+  }
+  if (absValue >= 100) {
+    return value.toFixed(1);
+  }
+  return value.toFixed(2);
+};
+
+const getParameterMetricUnit = (workspaceKind: WorkspaceKind, metricKey: string): string | null => {
+  if (/_ratio$/i.test(metricKey) || metricKey === "sys_dia_ratio" || metricKey === "S1_ratio" || metricKey === "S2_ratio") {
+    return "ratio";
+  }
+
+  if (
+    /(?:_width|_duration|_interval|_segment)$/i.test(metricKey) ||
+    ["p_rs", "qrs_rs", "t_rs", "cycle_duration"].includes(metricKey)
+  ) {
+    return workspaceKind === "ecg" ? "samples" : "index";
+  }
+
+  if (/(?:^area_|_area$)/i.test(metricKey)) {
+    return workspaceKind === "ecg" ? "a.u. * samples" : "a.u. * index";
+  }
+
+  if (/(?:^Peak_|_peak_|_amp$|_avg$|^rms_)/i.test(metricKey)) {
+    return "a.u.";
+  }
+
+  return null;
+};
+
+const getFileRoleEmptyLabel = (workspace: WorkspaceKind, fileRole: FileRole): string => {
+  if (fileRole === "parameter") {
+    return workspace === "ecg" ? "No uploaded ECG parameter files" : "No uploaded HeartSound parameter files";
+  }
+  return WORKSPACE_TABS.find((item) => item.key === workspace)?.emptyLabel ?? "No files";
+};
+
+const extractAutoSyncKey = (fileName: string, workspaceKind: WorkspaceKind): string | null => {
+  const trimmed = fileName.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const stem = trimmed.replace(/\.[^.]+$/, "");
+  if (workspaceKind === "heartsound") {
+    const normalizedStem = stem
+      .toLowerCase()
+      .replace(/[_\s-]+/g, "_")
+      .replace(/(?:_rs_score|_parameter)$/i, "")
+      .trim();
+    return normalizedStem || null;
+  }
+
+  const leadingNumberMatch = stem.match(/^\s*(\d+)/);
+  if (leadingNumberMatch?.[1]) {
+    return leadingNumberMatch[1];
+  }
+  const [firstToken] = stem.split("_");
+  const syncKey = firstToken?.trim().toLowerCase();
+  return syncKey || null;
+};
+
+const findAutoLinkedFile = (
+  files: UploadedFileMetadata[],
+  sourceFile: UploadedFileMetadata,
+  targetRole: FileRole
+): UploadedFileMetadata | null => {
+  const sourceSyncKey = extractAutoSyncKey(sourceFile.originalName, sourceFile.workspaceKind);
+  if (!sourceSyncKey) {
+    return null;
+  }
+
+  return (
+    files.find((candidate) => {
+      if (candidate.fileId === sourceFile.fileId || candidate.fileRole !== targetRole) {
+        return false;
+      }
+      return (
+        candidate.workspaceKind === sourceFile.workspaceKind &&
+        extractAutoSyncKey(candidate.originalName, candidate.workspaceKind) === sourceSyncKey
+      );
+    }) ?? null
+  );
+};
 
 function GearIcon() {
   return (
@@ -311,14 +623,19 @@ function AccessKeyIcon() {
 }
 
 const PanelCard = memo(function PanelCard({
+  workspaceKind,
+  splitMode,
   panel,
   plotState,
+  parameterState,
   isActive,
   onActivate,
   onToggleSeries,
+  onToggleParameterSummary,
   onOpenSettings,
   onResetPanel,
-  onSliderRangeCommit
+  onSliderRangeCommit,
+  onSelectCycle
 }: PanelCardProps) {
   const sliderDebounceRef = useRef<number | null>(null);
 
@@ -332,6 +649,7 @@ const PanelCard = memo(function PanelCard({
 
   const activePlot = plotState.current ?? plotState.overview;
   const overviewPlot = plotState.overview ?? activePlot;
+  const showParameterSection = panel.showParameterSummary;
   const rangeGuide = useMemo(() => {
     if (panel.previousRangeStart === null || panel.previousRangeEnd === null) {
       return null;
@@ -354,6 +672,20 @@ const PanelCard = memo(function PanelCard({
       overlapRows
     };
   }, [panel.previousRangeEnd, panel.previousRangeStart, panel.rangeEnd, panel.rangeStart]);
+  const parameterSummary = parameterState.summary;
+  const isDualPanelLayout = splitMode === 2;
+  const selectedCycle = useMemo(() => {
+    const cycles = parameterSummary?.cycles ?? [];
+    if (cycles.length === 0) {
+      return null;
+    }
+    return (
+      cycles.find((cycle) => cycle.cycleIndex === parameterState.selectedCycleIndex) ??
+      cycles[0] ??
+      null
+    );
+  }, [parameterState.selectedCycleIndex, parameterSummary]);
+  const displayedParameterGroups = selectedCycle?.groups ?? parameterSummary?.groups ?? [];
 
   const chartOption = useMemo<EChartsOption | null>(() => {
     if (!panel.fileId || !activePlot) {
@@ -370,34 +702,77 @@ const PanelCard = memo(function PanelCard({
     const s1EndPairs = toDataPairs(activePlot.x, activePlot.s1End);
     const s2StartPairs = toDataPairs(activePlot.x, activePlot.s2Start);
     const s2EndPairs = toDataPairs(activePlot.x, activePlot.s2End);
+    const majorPsPairs = toDataPairs(activePlot.x, activePlot.majorPs);
+    const majorPePairs = toDataPairs(activePlot.x, activePlot.majorPe);
+    const majorQrssPairs = toDataPairs(activePlot.x, activePlot.majorQrss);
+    const majorQrsePairs = toDataPairs(activePlot.x, activePlot.majorQrse);
+    const majorTsPairs = toDataPairs(activePlot.x, activePlot.majorTs);
+    const pointPsPairs = toDataPairs(activePlot.x, activePlot.pointPs);
+    const pointPePairs = toDataPairs(activePlot.x, activePlot.pointPe);
+    const pointQrssPairs = toDataPairs(activePlot.x, activePlot.pointQrss);
+    const pointQrsePairs = toDataPairs(activePlot.x, activePlot.pointQrse);
+    const pointTsPairs = toDataPairs(activePlot.x, activePlot.pointTs);
     const overviewPairs = overviewPlot
       ? toDataPairs(overviewPlot.x, overviewPlot.amplitude)
       : amplitudePairs;
+    const ecgMarkerMode = panel.styleOptions.ecgMarkerMode;
+    const secondaryAxisMax =
+      workspaceKind === "ecg"
+        ? ecgMarkerMode === "point"
+          ? ECG_POINT_SECONDARY_AXIS_MAX
+          : ECG_SECONDARY_AXIS_MAX
+        : HEARTSOUND_SECONDARY_AXIS_MAX;
+    const barWidth = workspaceKind === "heartsound" ? HEARTSOUND_RS_BAR_WIDTH : ECG_BAR_WIDTH;
 
     const mainSeries: NonNullable<EChartsOption["series"]> = [];
     if (panel.visibleSeries.amplitude) {
       mainSeries.push({
-        name: "Amplitude",
+        name: workspaceKind === "ecg" ? "raw" : "Amplitude",
         type: "line",
         xAxisIndex: 0,
         yAxisIndex: 0,
+        z: RAW_SERIES_Z,
         showSymbol: false,
         animation: false,
         lineStyle: {
           width: panel.styleOptions.amplitudeLineWidth,
-          color: "#79c0ff"
+          color: workspaceKind === "ecg" ? ECG_SERIES_COLORS.amplitude : "#79c0ff"
         },
-        itemStyle: { color: "#79c0ff" },
+        itemStyle: { color: workspaceKind === "ecg" ? ECG_SERIES_COLORS.amplitude : "#79c0ff" },
         data: amplitudePairs
       });
     }
-    if (panel.visibleSeries.s1Start) {
+    if (workspaceKind === "heartsound" && selectedCycle) {
+      mainSeries.push({
+        name: "Selected Cycle",
+        type: "line",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        z: 0,
+        silent: true,
+        showSymbol: false,
+        animation: false,
+        lineStyle: { opacity: 0 },
+        data: [],
+        markArea: {
+          silent: true,
+          label: { show: false },
+          itemStyle: {
+            color: "rgba(255, 166, 87, 0.22)",
+            borderColor: "rgba(255, 166, 87, 0.62)"
+          },
+          data: [[{ xAxis: selectedCycle.startIndex }, { xAxis: selectedCycle.endIndex }]]
+        }
+      });
+    }
+    if (workspaceKind === "heartsound" && panel.visibleSeries.s1Start) {
       mainSeries.push({
         name: "S1-Start_RS_Score",
         type: "bar",
         xAxisIndex: 0,
         yAxisIndex: 1,
-        barWidth: RS_BAR_WIDTH,
+        z: BAR_SERIES_Z,
+        barWidth,
         barGap: "-100%",
         animation: false,
         itemStyle: {
@@ -407,13 +782,14 @@ const PanelCard = memo(function PanelCard({
         data: s1StartPairs
       });
     }
-    if (panel.visibleSeries.s1End) {
+    if (workspaceKind === "heartsound" && panel.visibleSeries.s1End) {
       mainSeries.push({
         name: "S1-End_RS_Score",
         type: "bar",
         xAxisIndex: 0,
         yAxisIndex: 1,
-        barWidth: RS_BAR_WIDTH,
+        z: BAR_SERIES_Z,
+        barWidth,
         barGap: "-100%",
         animation: false,
         itemStyle: {
@@ -423,13 +799,14 @@ const PanelCard = memo(function PanelCard({
         data: s1EndPairs
       });
     }
-    if (panel.visibleSeries.s2Start) {
+    if (workspaceKind === "heartsound" && panel.visibleSeries.s2Start) {
       mainSeries.push({
         name: "S2-Start_RS_Score",
         type: "bar",
         xAxisIndex: 0,
         yAxisIndex: 1,
-        barWidth: RS_BAR_WIDTH,
+        z: BAR_SERIES_Z,
+        barWidth,
         barGap: "-100%",
         animation: false,
         itemStyle: {
@@ -439,13 +816,14 @@ const PanelCard = memo(function PanelCard({
         data: s2StartPairs
       });
     }
-    if (panel.visibleSeries.s2End) {
+    if (workspaceKind === "heartsound" && panel.visibleSeries.s2End) {
       mainSeries.push({
         name: "S2-End_RS_Score",
         type: "bar",
         xAxisIndex: 0,
         yAxisIndex: 1,
-        barWidth: RS_BAR_WIDTH,
+        z: BAR_SERIES_Z,
+        barWidth,
         barGap: "-100%",
         animation: false,
         itemStyle: {
@@ -455,7 +833,91 @@ const PanelCard = memo(function PanelCard({
         data: s2EndPairs
       });
     }
-
+    if (workspaceKind === "ecg" && panel.visibleSeries.majorPs) {
+      mainSeries.push({
+        name: ecgMarkerMode === "point" ? "point_ps" : "major_ps",
+        type: "bar",
+        xAxisIndex: 0,
+        yAxisIndex: 1,
+        z: BAR_SERIES_Z,
+        barWidth,
+        barGap: "-100%",
+        animation: false,
+        itemStyle: {
+          color: ecgMarkerMode === "point" ? ECG_SERIES_COLORS.pointPs : ECG_SERIES_COLORS.majorPs,
+          opacity: panel.styleOptions.rsBarOpacity
+        },
+        data: ecgMarkerMode === "point" ? pointPsPairs : majorPsPairs
+      });
+    }
+    if (workspaceKind === "ecg" && panel.visibleSeries.majorPe) {
+      mainSeries.push({
+        name: ecgMarkerMode === "point" ? "point_pe" : "major_pe",
+        type: "bar",
+        xAxisIndex: 0,
+        yAxisIndex: 1,
+        z: BAR_SERIES_Z,
+        barWidth,
+        barGap: "-100%",
+        animation: false,
+        itemStyle: {
+          color: ecgMarkerMode === "point" ? ECG_SERIES_COLORS.pointPe : ECG_SERIES_COLORS.majorPe,
+          opacity: panel.styleOptions.rsBarOpacity
+        },
+        data: ecgMarkerMode === "point" ? pointPePairs : majorPePairs
+      });
+    }
+    if (workspaceKind === "ecg" && panel.visibleSeries.majorQrss) {
+      mainSeries.push({
+        name: ecgMarkerMode === "point" ? "point_qrss" : "major_qrss",
+        type: "bar",
+        xAxisIndex: 0,
+        yAxisIndex: 1,
+        z: BAR_SERIES_Z,
+        barWidth,
+        barGap: "-100%",
+        animation: false,
+        itemStyle: {
+          color: ecgMarkerMode === "point" ? ECG_SERIES_COLORS.pointQrss : ECG_SERIES_COLORS.majorQrss,
+          opacity: panel.styleOptions.rsBarOpacity
+        },
+        data: ecgMarkerMode === "point" ? pointQrssPairs : majorQrssPairs
+      });
+    }
+    if (workspaceKind === "ecg" && panel.visibleSeries.majorQrse) {
+      mainSeries.push({
+        name: ecgMarkerMode === "point" ? "point_qrse" : "major_qrse",
+        type: "bar",
+        xAxisIndex: 0,
+        yAxisIndex: 1,
+        z: BAR_SERIES_Z,
+        barWidth,
+        barGap: "-100%",
+        animation: false,
+        itemStyle: {
+          color: ecgMarkerMode === "point" ? ECG_SERIES_COLORS.pointQrse : ECG_SERIES_COLORS.majorQrse,
+          opacity: panel.styleOptions.rsBarOpacity
+        },
+        data: ecgMarkerMode === "point" ? pointQrsePairs : majorQrsePairs
+      });
+    }
+    if (workspaceKind === "ecg" && panel.visibleSeries.majorTs) {
+      mainSeries.push({
+        name: ecgMarkerMode === "point" ? "point_ts" : "major_ts",
+        type: "bar",
+        xAxisIndex: 0,
+        yAxisIndex: 1,
+        z: BAR_SERIES_Z,
+        barWidth,
+        barGap: "-100%",
+        animation: false,
+        itemStyle: {
+          color: ecgMarkerMode === "point" ? ECG_SERIES_COLORS.pointTs : ECG_SERIES_COLORS.majorTs,
+          opacity: panel.styleOptions.rsBarOpacity
+        },
+        data: ecgMarkerMode === "point" ? pointTsPairs : majorTsPairs
+      });
+    }
     mainSeries.push({
       name: "Navigator",
       type: "line",
@@ -543,7 +1005,7 @@ const PanelCard = memo(function PanelCard({
           type: "value",
           position: "right",
           min: RS_SCORE_AXIS_MIN,
-          max: RS_SCORE_AXIS_MAX,
+          max: secondaryAxisMax,
           scale: panel.styleOptions.yAxisAutoScale,
           axisLine: {
             lineStyle: { color: "#30363d" }
@@ -582,7 +1044,7 @@ const PanelCard = memo(function PanelCard({
       ],
       series: mainSeries
     };
-  }, [activePlot, overviewPlot, panel]);
+  }, [activePlot, overviewPlot, panel, selectedCycle, workspaceKind]);
 
   const onDataZoom = useCallback(
     (event: {
@@ -641,11 +1103,14 @@ const PanelCard = memo(function PanelCard({
         <div className="panel-title-group">
           <div className="panel-title">Panel {panel.panelId}</div>
           <div className="panel-file">{panel.fileName ?? "No file assigned"}</div>
+          {panel.parameterFileName ? (
+            <div className="panel-linked-parameter">Parameter: {panel.parameterFileName}</div>
+          ) : null}
         </div>
 
         <div className="panel-actions" onClick={(event) => event.stopPropagation()}>
           <div className="series-group">
-            {SERIES_ITEMS.map((series) => (
+            {getSeriesItemsForWorkspace(workspaceKind, panel.styleOptions.ecgMarkerMode).map((series) => (
               <label key={series.key} className="series-toggle">
                 <input
                   type="checkbox"
@@ -656,6 +1121,14 @@ const PanelCard = memo(function PanelCard({
               </label>
             ))}
           </div>
+          <label className="panel-parameter-toggle">
+            <input
+              type="checkbox"
+              checked={panel.showParameterSummary}
+              onChange={() => onToggleParameterSummary(panel.panelId)}
+            />
+            <span>Parameter</span>
+          </label>
           <button
             type="button"
             className="icon-button"
@@ -683,31 +1156,128 @@ const PanelCard = memo(function PanelCard({
         ) : !chartOption ? (
           <div className="empty-state">Loading chart data...</div>
         ) : (
-          <div className="panel-chart-wrapper">
-            <div className="panel-chart-host">
-              <ReactECharts
-                option={chartOption}
-                style={{ width: "100%", height: "100%" }}
-                onEvents={{ datazoom: onDataZoom }}
-                notMerge
-                lazyUpdate
-              />
-              {plotState.loading ? <div className="panel-chart-overlay">Loading...</div> : null}
+          <div
+            className={
+              isDualPanelLayout && showParameterSection ? "panel-chart-wrapper dual-panel" : "panel-chart-wrapper"
+            }
+          >
+            <div className="panel-chart-section">
+              <div className="panel-chart-host">
+                <ReactECharts
+                  option={chartOption}
+                  style={{ width: "100%", height: "100%" }}
+                  onEvents={{ datazoom: onDataZoom }}
+                  notMerge
+                  lazyUpdate
+                />
+                {plotState.loading ? <div className="panel-chart-overlay">Loading...</div> : null}
+              </div>
+              <div className="panel-range-info">
+                rows {formatRowNumber(panel.rangeStart)} - {formatRowNumber(panel.rangeEnd)}
+                {panel.totalRows !== null ? ` / total ${formatRowNumber(panel.totalRows)}` : ""}
+                {plotState.current?.isDownsampled ? " (optimized view)" : ""}
+              </div>
+              {rangeGuide ? (
+                <div className="panel-range-guide">
+                  previous {formatRowNumber(panel.previousRangeStart ?? 0)} -{" "}
+                  {formatRowNumber(panel.previousRangeEnd ?? 0)} | overlap{" "}
+                  {formatRowNumber(rangeGuide.overlapRows)} rows | new on {rangeGuide.direction}{" "}
+                  {formatRowNumber(rangeGuide.newRows)} rows
+                </div>
+              ) : null}
+              {plotState.error ? <div className="panel-chart-error">{plotState.error}</div> : null}
             </div>
-            <div className="panel-range-info">
-              rows {formatRowNumber(panel.rangeStart)} - {formatRowNumber(panel.rangeEnd)}
-              {panel.totalRows !== null ? ` / total ${formatRowNumber(panel.totalRows)}` : ""}
-              {plotState.current?.isDownsampled ? " (downsampled)" : ""}
-            </div>
-            {rangeGuide ? (
-              <div className="panel-range-guide">
-                previous {formatRowNumber(panel.previousRangeStart ?? 0)} -{" "}
-                {formatRowNumber(panel.previousRangeEnd ?? 0)} | overlap{" "}
-                {formatRowNumber(rangeGuide.overlapRows)} rows | new on {rangeGuide.direction}{" "}
-                {formatRowNumber(rangeGuide.newRows)} rows
+            {showParameterSection ? (
+              <div className="panel-parameter-section">
+                {panel.parameterFileId ? (
+                  <div className="parameter-summary-shell">
+                    <div className="parameter-summary-header">
+                      <div className="parameter-summary-title">Linked parameter window</div>
+                      <div className="parameter-summary-range">
+                        rows {formatRowNumber(panel.rangeStart)} - {formatRowNumber(panel.rangeEnd)}
+                      </div>
+                    </div>
+                    {parameterState.loading ? (
+                      <div className="parameter-summary-empty">Loading parameter summary...</div>
+                    ) : parameterState.error ? (
+                      <div className="panel-chart-error">{parameterState.error}</div>
+                    ) : parameterSummary ? (
+                      <>
+                        {workspaceKind === "heartsound" && (parameterSummary.cycles?.length ?? 0) > 0 ? (
+                          <div className="parameter-cycle-toolbar">
+                            <label className="parameter-cycle-field">
+                              <span className="parameter-cycle-label">Cycle</span>
+                              <select
+                                className="settings-input parameter-cycle-select"
+                                value={String(selectedCycle?.cycleIndex ?? parameterSummary.cycles?.[0]?.cycleIndex ?? "")}
+                                onChange={(event) => onSelectCycle(panel.panelId, Number(event.target.value))}
+                              >
+                                {parameterSummary.cycles?.map((cycle) => (
+                                  <option key={cycle.cycleIndex} value={cycle.cycleIndex}>
+                                    Cycle {cycle.cycleIndex}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            {selectedCycle ? (
+                              <div className="parameter-cycle-range">
+                                highlight {formatRowNumber(selectedCycle.startIndex)} -{" "}
+                                {formatRowNumber(selectedCycle.endIndex)}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <div className="parameter-group-list">
+                          {displayedParameterGroups.map((group) => {
+                            const scaleMax = Math.max(
+                              ...group.metrics.flatMap((metric) => [
+                                Math.abs(metric.mean),
+                                Math.abs(metric.min),
+                                Math.abs(metric.max)
+                              ]),
+                              1
+                            );
+                            return (
+                              <section key={group.key} className="parameter-group-card">
+                                <div className="parameter-group-title">{group.label}</div>
+                                <div className="parameter-metric-list">
+                                  {group.metrics.map((metric) => {
+                                    const barWidth = `${Math.min(100, (Math.abs(metric.mean) / scaleMax) * 100)}%`;
+                                    const metricUnit = getParameterMetricUnit(workspaceKind, metric.key);
+                                    return (
+                                      <div key={metric.key} className="parameter-metric-row">
+                                        <div className="parameter-metric-label">
+                                          <span>{metric.label}</span>
+                                          {metricUnit ? <span className="parameter-metric-unit">{metricUnit}</span> : null}
+                                        </div>
+                                        <div className="parameter-metric-meter">
+                                          <div className="parameter-metric-meter-fill" style={{ width: barWidth }} />
+                                        </div>
+                                        <div className="parameter-metric-value">{formatMetricValue(metric.mean)}</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </section>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="parameter-summary-empty">
+                        Attach a parameter file to this panel to view the current-range summary.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="parameter-summary-shell parameter-summary-shell-empty">
+                    <div className="parameter-summary-empty">
+                      Attach a parameter file to this panel to view the current-range summary.
+                    </div>
+                  </div>
+                )}
               </div>
             ) : null}
-            {plotState.error ? <div className="panel-chart-error">{plotState.error}</div> : null}
           </div>
         )}
       </div>
@@ -716,8 +1286,7 @@ const PanelCard = memo(function PanelCard({
 });
 
 function App() {
-  const [splitMode, setSplitMode] = useState<SplitMode>(1);
-  const [activePanelId, setActivePanelId] = useState<PanelId>(1);
+  const [appState, setAppState] = useState<AppState>(createAppState());
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("checking");
   const [authState, setAuthState] = useState<AuthState>(INITIAL_AUTH_STATE);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
@@ -736,16 +1305,8 @@ function App() {
   const [adminSubmitting, setAdminSubmitting] = useState<boolean>(false);
   const [adminAccessModeDraft, setAdminAccessModeDraft] = useState<AccessMode>("open");
   const [latestAccessCodeExpiresAt, setLatestAccessCodeExpiresAt] = useState<string | null>(null);
-  const [panels, setPanels] = useState<PanelState[]>(INITIAL_PANELS);
-  const [panelPlots, setPanelPlots] = useState<Record<PanelId, PanelPlotState>>(INITIAL_PANEL_PLOTS);
-  const [files, setFiles] = useState<UploadedFileMetadata[]>([]);
-  const [filesLoading, setFilesLoading] = useState<boolean>(false);
-  const [uploading, setUploading] = useState<boolean>(false);
   const [deleteSubmitting, setDeleteSubmitting] = useState<boolean>(false);
-  const [searchText, setSearchText] = useState<string>("");
-  const [statusMessage, setStatusMessage] = useState<string>("");
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
-  const [selectedDeleteIds, setSelectedDeleteIds] = useState<string[]>([]);
   const [settingsPanelId, setSettingsPanelId] = useState<PanelId | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft | null>(null);
 
@@ -753,28 +1314,78 @@ function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
+  const {
+    splitMode,
+    activePanelId,
+    activeFileRole,
+    panels,
+    panelPlots,
+    panelParameters,
+    filesByWorkspace,
+    filesLoadingByWorkspace,
+    uploadingByWorkspace,
+    searchText,
+    statusMessage,
+    selectedDeleteIds
+  } = appState;
   const visiblePanelIds = PANEL_IDS_BY_MODE[splitMode];
   const activePanel = panels.find((panel) => panel.panelId === activePanelId) ?? panels[0];
+  const activeWorkspace = activePanel.workspaceKind;
   const settingsPanel =
     settingsPanelId !== null ? panels.find((panel) => panel.panelId === settingsPanelId) ?? null : null;
+  const settingsTargetWorkspace = settingsPanel?.workspaceKind ?? activeWorkspace;
+  const settingsRangeShiftStep = getRangeShiftStep(settingsTargetWorkspace);
+  const files = filesByWorkspace[activeWorkspace];
+  const filesLoading = filesLoadingByWorkspace[activeWorkspace];
+  const uploading = uploadingByWorkspace[activeWorkspace];
+
+  const updateAppState = useCallback((updater: (state: AppState) => AppState) => {
+    setAppState((previous) => updater(previous));
+  }, []);
+  const updateWorkspaceState = useCallback(
+    (_workspace: WorkspaceKind, updater: (state: AppState) => AppState) => {
+      updateAppState(updater);
+    },
+    [updateAppState]
+  );
 
   const updatePanelState = useCallback(
     (panelId: PanelId, updater: (panel: PanelState) => PanelState) => {
-      setPanels((previous) =>
-        previous.map((panel) => (panel.panelId === panelId ? updater(panel) : panel))
-      );
+      updateAppState((previous) => ({
+        ...previous,
+        panels: previous.panels.map((panel) => (panel.panelId === panelId ? updater(panel) : panel))
+      }));
     },
-    []
+    [updateAppState]
   );
 
   const setPanelPlotState = useCallback(
     (panelId: PanelId, updater: (state: PanelPlotState) => PanelPlotState) => {
-      setPanelPlots((previous) => ({
+      updateAppState((previous) => ({
         ...previous,
-        [panelId]: updater(previous[panelId])
+        panelPlots: {
+          ...previous.panelPlots,
+          [panelId]: updater(previous.panelPlots[panelId])
+        }
       }));
     },
-    []
+    [updateAppState]
+  );
+
+  const setPanelParameterState = useCallback(
+    (
+      panelId: PanelId,
+      updater: (state: PanelParameterState) => PanelParameterState
+    ) => {
+      updateAppState((previous) => ({
+        ...previous,
+        panelParameters: {
+          ...previous.panelParameters,
+          [panelId]: updater(previous.panelParameters[panelId])
+        }
+      }));
+    },
+    [updateAppState]
   );
 
   const clearPanelPlotState = useCallback(
@@ -783,6 +1394,23 @@ function App() {
       setPanelPlotState(panelId, () => createEmptyPlotState());
     },
     [setPanelPlotState]
+  );
+
+  const clearPanelParameterState = useCallback(
+    (panelId: PanelId) => {
+      setPanelParameterState(panelId, () => createEmptyParameterState());
+    },
+    [setPanelParameterState]
+  );
+
+  const selectPanelCycle = useCallback(
+    (panelId: PanelId, cycleIndex: number) => {
+      setPanelParameterState(panelId, (state) => ({
+        ...state,
+        selectedCycleIndex: cycleIndex
+      }));
+    },
+    [setPanelParameterState]
   );
 
   const refreshAuthState = useCallback(async (showLoading = false) => {
@@ -814,26 +1442,53 @@ function App() {
     }
   }, []);
 
-  const fetchFileList = useCallback(async () => {
-    setFilesLoading(true);
+  const fetchFileList = useCallback(async (workspace: WorkspaceKind) => {
+    updateAppState((previous) => ({
+      ...previous,
+      filesLoadingByWorkspace: {
+        ...previous.filesLoadingByWorkspace,
+        [workspace]: true
+      }
+    }));
     try {
-      const response = await fetch("/api/files");
+      const response = await fetch(`/api/files?workspaceKind=${workspace}`);
       if (response.status === 401) {
         await refreshAuthState();
-        setFiles([]);
+        updateAppState((previous) => ({
+          ...previous,
+          filesByWorkspace: {
+            ...previous.filesByWorkspace,
+            [workspace]: []
+          }
+        }));
         return;
       }
       if (!response.ok) {
         throw new Error("failed to load files");
       }
       const payload = (await response.json()) as { files?: UploadedFileMetadata[] };
-      setFiles(payload.files ?? []);
+      updateAppState((previous) => ({
+        ...previous,
+        filesByWorkspace: {
+          ...previous.filesByWorkspace,
+          [workspace]: payload.files ?? []
+        }
+      }));
     } catch {
-      setStatusMessage("Failed to load file list.");
+      updateAppState((previous) => ({
+        ...previous,
+        statusMessage: "Failed to load file list."
+      }));
     } finally {
-      setFilesLoading(false);
+      updateAppState((previous) => ({
+        ...previous,
+        filesLoadingByWorkspace: {
+          ...previous.filesLoadingByWorkspace,
+          [workspace]: false
+        }
+      }));
     }
-  }, [refreshAuthState]);
+  }, [refreshAuthState, updateAppState]);
 
   const fetchPlotData = useCallback(
     async (
@@ -872,6 +1527,26 @@ function App() {
         throw new Error(extractErrorMessage(payload));
       }
 
+      return payload;
+    },
+    [refreshAuthState]
+  );
+
+  const fetchParameterSummary = useCallback(
+    async (fileId: string, start: number, end: number): Promise<ParameterSummaryPayload> => {
+      const query = new URLSearchParams({
+        start: String(start),
+        end: String(end)
+      });
+      const response = await fetch(`/api/files/${fileId}/parameter-summary?${query.toString()}`);
+      if (response.status === 401) {
+        await refreshAuthState();
+        throw new Error("login required");
+      }
+      const payload = (await response.json().catch(() => null)) as ParameterSummaryPayload | null;
+      if (!response.ok || payload === null) {
+        throw new Error(extractErrorMessage(payload));
+      }
       return payload;
     },
     [refreshAuthState]
@@ -961,6 +1636,41 @@ function App() {
     [fetchPlotData, setPanelPlotState]
   );
 
+  const requestParameterSummaryForPanel = useCallback(
+    async (panelId: PanelId, fileId: string, start: number, end: number) => {
+      setPanelParameterState(panelId, (state) => ({
+        ...state,
+        loading: true,
+        error: null
+      }));
+
+      try {
+        const payload = await fetchParameterSummary(fileId, start, end);
+        setPanelParameterState(panelId, (state) => {
+          const availableCycles = payload.cycles ?? [];
+          const selectedCycleIndex =
+            availableCycles.find((cycle) => cycle.cycleIndex === state.selectedCycleIndex)?.cycleIndex ??
+            availableCycles[0]?.cycleIndex ??
+            null;
+          return {
+            summary: payload,
+            selectedCycleIndex,
+            loading: false,
+            error: null
+          };
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "failed to load parameter summary";
+        setPanelParameterState(panelId, (state) => ({
+          ...state,
+          loading: false,
+          error: message
+        }));
+      }
+    },
+    [fetchParameterSummary, setPanelParameterState]
+  );
+
   useEffect(() => {
     const controller = new AbortController();
 
@@ -1002,30 +1712,58 @@ function App() {
     }
 
     if (authState.accessMode === "open" || authState.isAuthenticated) {
-      void fetchFileList();
+      void fetchFileList("heartsound");
+      void fetchFileList("ecg");
       return;
     }
 
-    setFiles([]);
-  }, [authLoading, authState.accessMode, authState.isAuthenticated, fetchFileList]);
+    updateAppState((previous) => ({
+      ...previous,
+      filesByWorkspace: {
+        heartsound: [],
+        ecg: []
+      }
+    }));
+  }, [authLoading, authState.accessMode, authState.isAuthenticated, fetchFileList, updateAppState]);
 
   useEffect(() => {
     if (!visiblePanelIds.includes(activePanelId)) {
-      setActivePanelId(visiblePanelIds[0]);
+      updateAppState((previous) => ({
+        ...previous,
+        activePanelId: visiblePanelIds[0]
+      }));
     }
-  }, [activePanelId, visiblePanelIds]);
+  }, [activePanelId, updateAppState, visiblePanelIds]);
 
   const filteredFiles = useMemo(() => {
+    const roleFilteredFiles = files
+      .filter((file) => file.fileRole === activeFileRole)
+      .slice()
+      .sort((left, right) => {
+        const nameComparison = FILE_NAME_COLLATOR.compare(left.originalName, right.originalName);
+        if (nameComparison !== 0) {
+          return nameComparison;
+        }
+
+        const pathComparison = FILE_NAME_COLLATOR.compare(left.relativePath ?? "", right.relativePath ?? "");
+        if (pathComparison !== 0) {
+          return pathComparison;
+        }
+
+        return left.uploadedAt.localeCompare(right.uploadedAt);
+      });
     if (!searchText.trim()) {
-      return files;
+      return roleFilteredFiles;
     }
     const query = searchText.trim().toLowerCase();
-    return files.filter((file) => {
+    return roleFilteredFiles.filter((file) => {
       const originalNameMatched = file.originalName.toLowerCase().includes(query);
       const relativePathMatched = file.relativePath?.toLowerCase().includes(query) ?? false;
       return originalNameMatched || relativePathMatched;
     });
-  }, [files, searchText]);
+  }, [activeFileRole, files, searchText]);
+  const allFilteredDeleteSelected =
+    filteredFiles.length > 0 && filteredFiles.every((file) => selectedDeleteIds.includes(file.fileId));
 
   const summarizeUploadResult = (result: UploadResult) => {
     const summaryParts = [`Uploaded: ${result.uploaded.length}`];
@@ -1038,14 +1776,25 @@ function App() {
     return summaryParts.join(" | ");
   };
 
-  const uploadFiles = async (fileList: FileList, isFolderUpload: boolean) => {
+  const uploadFiles = async (
+    workspace: WorkspaceKind,
+    fileRole: FileRole,
+    fileList: FileList,
+    isFolderUpload: boolean
+  ) => {
     const filesToUpload = Array.from(fileList);
     if (filesToUpload.length === 0) {
       return;
     }
 
-    setUploading(true);
-    setStatusMessage("");
+    updateAppState((previous) => ({
+      ...previous,
+      uploadingByWorkspace: {
+        ...previous.uploadingByWorkspace,
+        [workspace]: true
+      },
+      statusMessage: ""
+    }));
 
     const formData = new FormData();
     for (const file of filesToUpload) {
@@ -1054,6 +1803,8 @@ function App() {
         formData.append("relative_paths", file.webkitRelativePath || file.name);
       }
     }
+    formData.append("workspace_kind", workspace);
+    formData.append("file_role", fileRole);
 
     try {
       const endpoint = isFolderUpload ? "/api/upload/folder" : "/api/upload/files";
@@ -1071,23 +1822,31 @@ function App() {
         throw new Error(extractErrorMessage(payload));
       }
 
-      setStatusMessage(payload ? summarizeUploadResult(payload) : "Upload complete");
-      await fetchFileList();
+      updateAppState((previous) => ({
+        ...previous,
+        statusMessage: payload ? `${fileRole} | ${summarizeUploadResult(payload)}` : "Upload complete"
+      }));
+      await fetchFileList(workspace);
     } catch (error) {
-      if (error instanceof Error) {
-        setStatusMessage(`Upload failed: ${error.message}`);
-      } else {
-        setStatusMessage("Upload failed");
-      }
+      updateAppState((previous) => ({
+        ...previous,
+        statusMessage: error instanceof Error ? `Upload failed: ${error.message}` : "Upload failed"
+      }));
     } finally {
-      setUploading(false);
+      updateAppState((previous) => ({
+        ...previous,
+        uploadingByWorkspace: {
+          ...previous.uploadingByWorkspace,
+          [workspace]: false
+        }
+      }));
     }
   };
 
   const handleUploadInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = event.target.files;
     if (selectedFiles) {
-      void uploadFiles(selectedFiles, false);
+      void uploadFiles(activeWorkspace, activeFileRole, selectedFiles, false);
     }
     event.target.value = "";
   };
@@ -1095,7 +1854,7 @@ function App() {
   const handleFolderInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = event.target.files;
     if (selectedFiles) {
-      void uploadFiles(selectedFiles, true);
+      void uploadFiles(activeWorkspace, activeFileRole, selectedFiles, true);
     }
     event.target.value = "";
   };
@@ -1138,12 +1897,31 @@ function App() {
         } else {
           void requestOverviewPlot(panelId, panel.fileId);
         }
+        if (panel.parameterFileId) {
+          void requestParameterSummaryForPanel(panelId, panel.parameterFileId, clampedStart, clampedEnd);
+        } else {
+          clearPanelParameterState(panelId);
+        }
         return;
       }
 
+      if (panel.parameterFileId) {
+        void requestParameterSummaryForPanel(panelId, panel.parameterFileId, clampedStart, clampedEnd);
+      } else {
+        clearPanelParameterState(panelId);
+      }
       void requestRangePlot(panelId, panel.fileId, clampedStart, clampedEnd);
     },
-    [panelPlots, panels, requestOverviewPlot, requestRangePlot, setPanelPlotState, updatePanelState]
+    [
+      clearPanelParameterState,
+      panelPlots,
+      panels,
+      requestOverviewPlot,
+      requestParameterSummaryForPanel,
+      requestRangePlot,
+      setPanelPlotState,
+      updatePanelState
+    ]
   );
 
   useEffect(() => {
@@ -1173,9 +1951,10 @@ function App() {
       const direction = event.key === "ArrowLeft" ? -1 : 1;
       const width = Math.max(activeTargetPanel.rangeEnd - activeTargetPanel.rangeStart, 0);
       const maxIndex = Math.max(activeTargetPanel.totalRows - 1, 0);
+      const rangeShiftStep = getKeyboardRangeShiftStep(activeTargetPanel.workspaceKind);
 
-      let nextStart = activeTargetPanel.rangeStart + direction * KEYBOARD_RANGE_SHIFT_STEP;
-      let nextEnd = activeTargetPanel.rangeEnd + direction * KEYBOARD_RANGE_SHIFT_STEP;
+      let nextStart = activeTargetPanel.rangeStart + direction * rangeShiftStep;
+      let nextEnd = activeTargetPanel.rangeEnd + direction * rangeShiftStep;
 
       if (nextStart < 0) {
         nextStart = 0;
@@ -1193,13 +1972,17 @@ function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activePanelId, applyPanelRange, panels, settingsPanelId]);
 
-  const assignFileToActivePanel = useCallback(
+  const assignDataFileToActivePanel = useCallback(
     (file: UploadedFileMetadata) => {
-      const initialRangeEnd = getInitialRangeEnd(file.rowCount);
+      const initialRangeEnd = getInitialRangeEnd(file.rowCount, activePanel.workspaceKind);
+      const matchedParameterFile = findAutoLinkedFile(files, file, "parameter");
+
       updatePanelState(activePanelId, (panel) => ({
         ...panel,
         fileId: file.fileId,
         fileName: file.originalName,
+        parameterFileId: matchedParameterFile?.fileId ?? null,
+        parameterFileName: matchedParameterFile?.originalName ?? null,
         totalRows: file.rowCount,
         previousRangeStart: null,
         previousRangeEnd: null,
@@ -1211,24 +1994,108 @@ function App() {
         const overviewPayload = await requestOverviewPlot(activePanelId, file.fileId, false);
         if (overviewPayload !== null) {
           await requestRangePlot(activePanelId, file.fileId, 0, initialRangeEnd);
+          if (matchedParameterFile) {
+            await requestParameterSummaryForPanel(activePanelId, matchedParameterFile.fileId, 0, initialRangeEnd);
+          } else {
+            clearPanelParameterState(activePanelId);
+          }
         }
       })();
     },
-    [activePanelId, clearPanelPlotState, requestOverviewPlot, requestRangePlot, updatePanelState]
+    [
+      activePanelId,
+      activePanel.workspaceKind,
+      clearPanelParameterState,
+      clearPanelPlotState,
+      files,
+      requestOverviewPlot,
+      requestParameterSummaryForPanel,
+      requestRangePlot,
+      updatePanelState
+    ]
+  );
+
+  const assignParameterFileToActivePanel = useCallback(
+    (file: UploadedFileMetadata) => {
+      updatePanelState(activePanelId, (panel) => ({
+        ...panel,
+        parameterFileId: file.fileId,
+        parameterFileName: file.originalName
+      }));
+
+      const currentPanel = panels.find((panel) => panel.panelId === activePanelId);
+      if (currentPanel?.fileId && currentPanel.totalRows !== null && currentPanel.totalRows > 0) {
+        void requestParameterSummaryForPanel(activePanelId, file.fileId, currentPanel.rangeStart, currentPanel.rangeEnd);
+      } else {
+        clearPanelParameterState(activePanelId);
+      }
+    },
+    [
+      activePanelId,
+      clearPanelParameterState,
+      panels,
+      requestParameterSummaryForPanel,
+      updatePanelState
+    ]
   );
 
   const resetPanel = useCallback(
     (panelId: PanelId) => {
-      setPanels((previous) =>
-        previous.map((panel) => (panel.panelId === panelId ? createDefaultPanelState(panelId) : panel))
-      );
+      const targetPanel = panels.find((panel) => panel.panelId === panelId);
+      if (!targetPanel) {
+        return;
+      }
+      updateAppState((previous) => ({
+        ...previous,
+        panels: previous.panels.map((panel) =>
+          panel.panelId === panelId ? createDefaultPanelState(panelId, targetPanel.workspaceKind) : panel
+        )
+      }));
       clearPanelPlotState(panelId);
+      clearPanelParameterState(panelId);
       if (settingsPanelId === panelId) {
         setSettingsPanelId(null);
         setSettingsDraft(null);
       }
     },
-    [clearPanelPlotState, settingsPanelId]
+    [
+      clearPanelParameterState,
+      clearPanelPlotState,
+      panels,
+      settingsPanelId,
+      updateAppState
+    ]
+  );
+
+  const updatePanelWorkspace = useCallback(
+    async (panelId: PanelId, workspaceKind: WorkspaceKind) => {
+      const panel = panels.find((item) => item.panelId === panelId);
+      if (!panel || panel.workspaceKind === workspaceKind) {
+        return;
+      }
+      updateAppState((previous) => ({
+        ...previous,
+        panels: previous.panels.map((item) =>
+          item.panelId === panelId ? createDefaultPanelState(panelId, workspaceKind) : item
+        ),
+        selectedDeleteIds: []
+      }));
+      clearPanelPlotState(panelId);
+      clearPanelParameterState(panelId);
+      if (settingsPanelId === panelId) {
+        setSettingsPanelId(null);
+        setSettingsDraft(null);
+      }
+      await fetchFileList(workspaceKind);
+    },
+    [
+      clearPanelParameterState,
+      clearPanelPlotState,
+      fetchFileList,
+      panels,
+      settingsPanelId,
+      updateAppState
+    ]
   );
 
   const togglePanelSeries = useCallback(
@@ -1239,6 +2106,16 @@ function App() {
           ...panel.visibleSeries,
           [seriesKey]: !panel.visibleSeries[seriesKey]
         }
+      }));
+    },
+    [updatePanelState]
+  );
+
+  const togglePanelParameterSummary = useCallback(
+    (panelId: PanelId) => {
+      updatePanelState(panelId, (panel) => ({
+        ...panel,
+        showParameterSummary: !panel.showParameterSummary
       }));
     },
     [updatePanelState]
@@ -1257,7 +2134,8 @@ function App() {
         rangeEnd: String(panel.rangeEnd),
         amplitudeLineWidth: String(panel.styleOptions.amplitudeLineWidth),
         rsBarOpacity: String(panel.styleOptions.rsBarOpacity),
-        yAxisAutoScale: panel.styleOptions.yAxisAutoScale
+        yAxisAutoScale: panel.styleOptions.yAxisAutoScale,
+        ecgMarkerMode: panel.styleOptions.ecgMarkerMode
       });
     },
     [panels]
@@ -1304,11 +2182,17 @@ function App() {
     const parsedOpacity = Number(settingsDraft.rsBarOpacity);
 
     if (parsedStart === null || parsedEnd === null) {
-      setStatusMessage("Range start/end must be valid numbers.");
+      updateWorkspaceState(settingsTargetWorkspace, (previous) => ({
+        ...previous,
+        statusMessage: "Range start/end must be valid numbers."
+      }));
       return;
     }
     if (!Number.isFinite(parsedLineWidth) || !Number.isFinite(parsedOpacity)) {
-      setStatusMessage("Style values must be valid numbers.");
+      updateWorkspaceState(settingsTargetWorkspace, (previous) => ({
+        ...previous,
+        statusMessage: "Style values must be valid numbers."
+      }));
       return;
     }
 
@@ -1317,13 +2201,14 @@ function App() {
       styleOptions: {
         amplitudeLineWidth: clampNumber(parsedLineWidth, 0.5, 6),
         rsBarOpacity: clampNumber(parsedOpacity, 0.1, 1),
-        yAxisAutoScale: settingsDraft.yAxisAutoScale
+        yAxisAutoScale: settingsDraft.yAxisAutoScale,
+        ecgMarkerMode: settingsDraft.ecgMarkerMode
       }
     }));
 
     applyPanelRange(settingsPanel.panelId, parsedStart, parsedEnd, true);
     closeSettingsModal();
-  }, [applyPanelRange, closeSettingsModal, settingsDraft, settingsPanel, updatePanelState]);
+  }, [applyPanelRange, closeSettingsModal, settingsDraft, settingsPanel, updatePanelState, updateWorkspaceState, settingsTargetWorkspace]);
 
   const resetSettingsRangeToFull = useCallback(() => {
     if (!settingsPanel || settingsPanel.totalRows === null || settingsPanel.totalRows <= 0 || !settingsDraft) {
@@ -1352,15 +2237,19 @@ function App() {
       const parsedStart = parseNumericInput(settingsDraft.rangeStart);
       const parsedEnd = parseNumericInput(settingsDraft.rangeEnd);
       if (parsedStart === null || parsedEnd === null) {
-        setStatusMessage("Range start/end must be valid numbers.");
+        updateWorkspaceState(settingsTargetWorkspace, (previous) => ({
+          ...previous,
+          statusMessage: "Range start/end must be valid numbers."
+        }));
         return;
       }
 
       const maxIndex = Math.max(settingsPanel.totalRows - 1, 0);
       const width = Math.max(parsedEnd - parsedStart, 0);
 
-      let nextStart = parsedStart + direction * QUICK_RANGE_SHIFT_STEP;
-      let nextEnd = parsedEnd + direction * QUICK_RANGE_SHIFT_STEP;
+      const rangeShiftStep = getRangeShiftStep(settingsTargetWorkspace);
+      let nextStart = parsedStart + direction * rangeShiftStep;
+      let nextEnd = parsedEnd + direction * rangeShiftStep;
 
       if (nextStart < 0) {
         nextStart = 0;
@@ -1372,15 +2261,26 @@ function App() {
 
       updateSettingsRange(nextStart, nextEnd);
     },
-    [settingsDraft, settingsPanel, updateSettingsRange]
+    [settingsDraft, settingsPanel, settingsTargetWorkspace, updateSettingsRange, updateWorkspaceState]
   );
 
   const toggleDeleteSelection = (fileId: string) => {
-    setSelectedDeleteIds((previous) =>
-      previous.includes(fileId)
-        ? previous.filter((id) => id !== fileId)
-        : [...previous, fileId]
-    );
+    updateWorkspaceState(activeWorkspace, (previous) => ({
+      ...previous,
+      selectedDeleteIds: previous.selectedDeleteIds.includes(fileId)
+        ? previous.selectedDeleteIds.filter((id) => id !== fileId)
+        : [...previous.selectedDeleteIds, fileId]
+    }));
+  };
+
+  const toggleSelectAllDeleteItems = () => {
+    updateWorkspaceState(activeWorkspace, (previous) => ({
+      ...previous,
+      selectedDeleteIds:
+        filteredFiles.length > 0 && filteredFiles.every((file) => previous.selectedDeleteIds.includes(file.fileId))
+          ? previous.selectedDeleteIds.filter((id) => !filteredFiles.some((file) => file.fileId === id))
+          : Array.from(new Set([...previous.selectedDeleteIds, ...filteredFiles.map((file) => file.fileId)]))
+    }));
   };
 
   const handleDeleteFiles = async () => {
@@ -1411,37 +2311,55 @@ function App() {
 
       const deletedIds = payload?.deletedFileIds ?? [];
       const deletedSet = new Set(deletedIds);
-      const affectedPanels = panels
+      const affectedDataPanels = panels
         .filter((panel) => panel.fileId && deletedSet.has(panel.fileId))
         .map((panel) => panel.panelId);
+      const affectedParameterPanels = panels
+        .filter((panel) => panel.parameterFileId && deletedSet.has(panel.parameterFileId))
+        .map((panel) => panel.panelId);
 
-      if (affectedPanels.length > 0) {
-        setPanels((previous) =>
-          previous.map((panel) =>
+      if (affectedDataPanels.length > 0 || affectedParameterPanels.length > 0) {
+        updateAppState((previous) => ({
+          ...previous,
+          panels: previous.panels.map((panel) =>
             panel.fileId && deletedSet.has(panel.fileId)
-              ? createDefaultPanelState(panel.panelId)
-              : panel
+              ? createDefaultPanelState(panel.panelId, panel.workspaceKind)
+              : panel.parameterFileId && deletedSet.has(panel.parameterFileId)
+                ? {
+                    ...panel,
+                    parameterFileId: null,
+                    parameterFileName: null
+                  }
+                : panel
           )
-        );
-        affectedPanels.forEach((panelId) => {
+        }));
+        affectedDataPanels.forEach((panelId) => {
           clearPanelPlotState(panelId);
+          clearPanelParameterState(panelId);
           if (settingsPanelId === panelId) {
             setSettingsPanelId(null);
             setSettingsDraft(null);
           }
         });
+        affectedParameterPanels.forEach((panelId) => {
+          if (!affectedDataPanels.includes(panelId)) {
+            clearPanelParameterState(panelId);
+          }
+        });
       }
 
-      setStatusMessage(`Deleted ${deletedIds.length} file(s).`);
+      updateAppState((previous) => ({
+        ...previous,
+        statusMessage: `Deleted ${deletedIds.length} file(s).`,
+        selectedDeleteIds: []
+      }));
       setIsDeleteModalOpen(false);
-      setSelectedDeleteIds([]);
-      await fetchFileList();
+      await fetchFileList(activeWorkspace);
     } catch (error) {
-      if (error instanceof Error) {
-        setStatusMessage(`Delete failed: ${error.message}`);
-      } else {
-        setStatusMessage("Delete failed");
-      }
+      updateAppState((previous) => ({
+        ...previous,
+        statusMessage: error instanceof Error ? `Delete failed: ${error.message}` : "Delete failed"
+      }));
     } finally {
       setDeleteSubmitting(false);
     }
@@ -1706,14 +2624,34 @@ function App() {
       ) : (
         <div className="app-shell">
           <aside className="sidebar">
-            <div className="sidebar-title">HeartSound Analysis Tool</div>
+            <div className="sidebar-title">
+              {WORKSPACE_TABS.find((workspace) => workspace.key === activeWorkspace)?.title}
+            </div>
+            <div className="file-role-tabs">
+              {FILE_ROLE_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={tab.key === activeFileRole ? "file-role-tab active" : "file-role-tab"}
+                  onClick={() =>
+                    updateAppState((previous) => ({
+                      ...previous,
+                      activeFileRole: tab.key,
+                      selectedDeleteIds: []
+                    }))
+                  }
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               className="placeholder-button"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
             >
-              Upload File
+              Upload {activeFileRole === "data" ? "Data File" : "Parameter File"}
             </button>
             <button
               type="button"
@@ -1721,7 +2659,7 @@ function App() {
               onClick={() => folderInputRef.current?.click()}
               disabled={uploading}
             >
-              Upload Folder
+              Upload {activeFileRole === "data" ? "Data Folder" : "Parameter Folder"}
             </button>
 
             <input
@@ -1745,26 +2683,43 @@ function App() {
               className="file-search-input"
               placeholder="Search files"
               value={searchText}
-              onChange={(event) => setSearchText(event.target.value)}
+              onChange={(event) =>
+                updateAppState((previous) => ({
+                  ...previous,
+                  searchText: event.target.value
+                }))
+              }
             />
 
             <div className="file-list-placeholder">
-              <div className="file-list-title">File List</div>
-              <div className="file-list-subtitle">Click file to assign to Panel {activePanelId}</div>
+              <div className="file-list-title">
+                {activeFileRole === "data" ? "Data Files" : "Parameter Files"}
+              </div>
+              <div className="file-list-subtitle">
+                {activeFileRole === "data"
+                  ? `Click file to assign to Panel ${activePanelId}`
+                  : `Click file to link as parameter to Panel ${activePanelId}`}
+              </div>
               <div className="file-list-scroller">
                 {filesLoading ? (
                   <div className="file-list-empty">Loading...</div>
                 ) : filteredFiles.length === 0 ? (
-                  <div className="file-list-empty">No uploaded files</div>
+                  <div className="file-list-empty">{getFileRoleEmptyLabel(activeWorkspace, activeFileRole)}</div>
                 ) : (
                   filteredFiles.map((file) => (
                     <button
                       key={file.fileId}
                       type="button"
                       className={
-                        file.fileId === activePanel.fileId ? "file-item active-target" : "file-item"
+                        (activeFileRole === "data" ? file.fileId === activePanel.fileId : file.fileId === activePanel.parameterFileId)
+                          ? "file-item active-target"
+                          : "file-item"
                       }
-                      onClick={() => assignFileToActivePanel(file)}
+                      onClick={() =>
+                        activeFileRole === "data"
+                          ? assignDataFileToActivePanel(file)
+                          : assignParameterFileToActivePanel(file)
+                      }
                     >
                       <div className="file-item-name">{file.originalName}</div>
                       {file.relativePath ? <div className="file-item-path">{file.relativePath}</div> : null}
@@ -1781,9 +2736,12 @@ function App() {
             <button
               type="button"
               className="danger-button"
-              disabled={files.length === 0}
+              disabled={filteredFiles.length === 0}
               onClick={() => {
-                setSelectedDeleteIds([]);
+                updateAppState((previous) => ({
+                  ...previous,
+                  selectedDeleteIds: []
+                }));
                 setIsDeleteModalOpen(true);
               }}
             >
@@ -1800,9 +2758,34 @@ function App() {
                     key={mode}
                     type="button"
                     className={mode === splitMode ? "split-button active" : "split-button"}
-                    onClick={() => setSplitMode(mode)}
+                    onClick={() =>
+                      updateAppState((previous) => ({
+                        ...previous,
+                        splitMode: mode
+                      }))
+                    }
                   >
-                    {mode === 1 ? "1 Panel" : mode === 2 ? "2 Panels" : "4 Panels"}
+                    {mode === 1 ? "1 Panel" : "2 Panels"}
+                  </button>
+                ))}
+              </div>
+              <div className="toolbar-center">
+                {WORKSPACE_TABS.map((workspace) => (
+                  <button
+                    key={workspace.key}
+                    type="button"
+                    className={
+                      workspace.key === activeWorkspace
+                        ? "workspace-switch-button active"
+                        : "workspace-switch-button"
+                    }
+                    onClick={() => {
+                      closeSettingsModal();
+                      setIsDeleteModalOpen(false);
+                      void updatePanelWorkspace(activePanelId, workspace.key);
+                    }}
+                  >
+                    {workspace.label}
                   </button>
                 ))}
               </div>
@@ -1811,6 +2794,8 @@ function App() {
                 <span className="health-badge">
                   {authState.accessMode === "code" ? "Access: code" : "Access: open"}
                 </span>
+                <span>{activeWorkspace === "heartsound" ? "Workspace: HeartSound" : "Workspace: ECG"}</span>
+                <span>{activeFileRole === "data" ? "Files: Data" : "Files: Parameter"}</span>
                 <span>Active Panel: {activePanelId}</span>
                 <button type="button" className="split-button" onClick={openAdminModal}>
                   Admin
@@ -1824,14 +2809,24 @@ function App() {
                 return (
                   <PanelCard
                     key={panelId}
+                    workspaceKind={panel.workspaceKind}
+                    splitMode={splitMode}
                     panel={panel}
                     plotState={panelPlots[panelId]}
+                    parameterState={panelParameters[panelId]}
                     isActive={panelId === activePanelId}
-                    onActivate={setActivePanelId}
+                    onActivate={(nextPanelId) =>
+                      updateAppState((previous) => ({
+                        ...previous,
+                        activePanelId: nextPanelId
+                      }))
+                    }
                     onToggleSeries={togglePanelSeries}
+                    onToggleParameterSummary={togglePanelParameterSummary}
                     onOpenSettings={openSettingsForPanel}
                     onResetPanel={resetPanel}
                     onSliderRangeCommit={applyPanelRange}
+                    onSelectCycle={selectPanelCycle}
                   />
                 );
               })}
@@ -1842,7 +2837,16 @@ function App() {
 
       {!isAccessLocked && settingsPanel && settingsDraft ? (
         <div className="modal-overlay" role="presentation">
-          <div className="modal-card" role="dialog" aria-modal="true" aria-label="Panel settings modal">
+          <form
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Panel settings modal"
+            onSubmit={(event) => {
+              event.preventDefault();
+              applySettings();
+            }}
+          >
             <div className="modal-title">Panel {settingsPanel.panelId} Settings</div>
             <div className="modal-body settings-form">
               <label className="settings-field">
@@ -1889,14 +2893,14 @@ function App() {
                       onClick={() => shiftSettingsRange(-1)}
                     >
                       <ChevronLeftIcon />
-                      <span>30k</span>
+                      <span>{settingsRangeShiftStep.toLocaleString()}</span>
                     </button>
                     <button
                       type="button"
                       className="range-shift-button"
                       onClick={() => shiftSettingsRange(1)}
                     >
-                      <span>30k</span>
+                      <span>{settingsRangeShiftStep.toLocaleString()}</span>
                       <ChevronRightIcon />
                     </button>
                   </div>
@@ -1930,6 +2934,35 @@ function App() {
                   }
                 />
               </label>
+              {settingsTargetWorkspace === "ecg" ? (
+                <div className="settings-field">
+                  <span className="settings-label">ECG Marker Source</span>
+                  <div className="settings-segmented">
+                    <button
+                      type="button"
+                      className={
+                        settingsDraft.ecgMarkerMode === "major"
+                          ? "settings-segmented-button active"
+                          : "settings-segmented-button"
+                      }
+                      onClick={() => setSettingsDraft({ ...settingsDraft, ecgMarkerMode: "major" })}
+                    >
+                      Major
+                    </button>
+                    <button
+                      type="button"
+                      className={
+                        settingsDraft.ecgMarkerMode === "point"
+                          ? "settings-segmented-button active"
+                          : "settings-segmented-button"
+                      }
+                      onClick={() => setSettingsDraft({ ...settingsDraft, ecgMarkerMode: "point" })}
+                    >
+                      Point
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <label className="settings-checkbox">
                 <input
                   type="checkbox"
@@ -1948,7 +2981,7 @@ function App() {
               <button type="button" className="split-button" onClick={resetSettingsRangeToFull}>
                 View Full Range
               </button>
-              <button type="button" className="split-button" onClick={applySettings}>
+              <button type="submit" className="split-button">
                 Apply
               </button>
               <button
@@ -1962,7 +2995,7 @@ function App() {
                 Panel Reset
               </button>
             </div>
-          </div>
+          </form>
         </div>
       ) : null}
 
@@ -2146,20 +3179,30 @@ function App() {
           <div className="modal-card" role="dialog" aria-modal="true" aria-label="Delete files modal">
             <div className="modal-title">Delete Files</div>
             <div className="modal-body">
-              {files.length === 0 ? (
+              {filteredFiles.length === 0 ? (
                 <div className="file-list-empty">No files to delete.</div>
               ) : (
-                files.map((file) => (
-                  <label key={file.fileId} className="delete-item">
+                <>
+                  <label className="delete-select-all">
                     <input
                       type="checkbox"
-                      checked={selectedDeleteIds.includes(file.fileId)}
-                      onChange={() => toggleDeleteSelection(file.fileId)}
+                      checked={allFilteredDeleteSelected}
+                      onChange={toggleSelectAllDeleteItems}
                     />
-                    <span>{file.originalName}</span>
-                    {file.relativePath ? <span className="delete-path">{file.relativePath}</span> : null}
+                    <span>Select all visible files</span>
                   </label>
-                ))
+                  {filteredFiles.map((file) => (
+                    <label key={file.fileId} className="delete-item">
+                      <input
+                        type="checkbox"
+                        checked={selectedDeleteIds.includes(file.fileId)}
+                        onChange={() => toggleDeleteSelection(file.fileId)}
+                      />
+                      <span>{file.originalName}</span>
+                      {file.relativePath ? <span className="delete-path">{file.relativePath}</span> : null}
+                    </label>
+                  ))}
+                </>
               )}
             </div>
             <div className="modal-actions">
@@ -2168,7 +3211,10 @@ function App() {
                 className="split-button"
                 onClick={() => {
                   setIsDeleteModalOpen(false);
-                  setSelectedDeleteIds([]);
+                  updateWorkspaceState(activeWorkspace, (previous) => ({
+                    ...previous,
+                    selectedDeleteIds: []
+                  }));
                 }}
                 disabled={deleteSubmitting}
               >

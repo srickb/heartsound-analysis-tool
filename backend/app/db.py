@@ -7,6 +7,8 @@ from .config import DATABASE_PATH
 
 DEFAULT_ADMIN_USERNAME = "ms"
 DEFAULT_ADMIN_PASSWORD = "1466"
+DEFAULT_WORKSPACE_KIND = "heartsound"
+DEFAULT_FILE_ROLE = "data"
 
 
 def _default_admin_password_hash() -> str:
@@ -33,12 +35,39 @@ def init_db() -> None:
                 original_name TEXT NOT NULL,
                 stored_name TEXT NOT NULL UNIQUE,
                 relative_path TEXT,
+                workspace_kind TEXT NOT NULL DEFAULT 'heartsound',
+                file_role TEXT NOT NULL DEFAULT 'data',
                 extension TEXT NOT NULL,
                 row_count INTEGER NOT NULL,
                 file_size_bytes INTEGER NOT NULL,
                 uploaded_at TEXT NOT NULL
             )
             """
+        )
+        file_columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(files)").fetchall()
+        }
+        if "workspace_kind" not in file_columns:
+            connection.execute(
+                "ALTER TABLE files ADD COLUMN workspace_kind TEXT NOT NULL DEFAULT 'heartsound'"
+            )
+        if "file_role" not in file_columns:
+            connection.execute(
+                "ALTER TABLE files ADD COLUMN file_role TEXT NOT NULL DEFAULT 'data'"
+            )
+        connection.execute(
+            """
+            UPDATE files
+            SET workspace_kind = COALESCE(NULLIF(workspace_kind, ''), ?)
+            """,
+            (DEFAULT_WORKSPACE_KIND,),
+        )
+        connection.execute(
+            """
+            UPDATE files
+            SET file_role = COALESCE(NULLIF(file_role, ''), ?)
+            """,
+            (DEFAULT_FILE_ROLE,),
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_files_uploaded_at ON files(uploaded_at DESC)"
