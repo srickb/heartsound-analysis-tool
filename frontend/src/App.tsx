@@ -83,6 +83,7 @@ interface SettingsDraft {
 
 interface AuthState {
   accessMode: AccessMode;
+  adminUsername: string | null;
   hasAdminPassword: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
@@ -165,6 +166,7 @@ const INITIAL_PANEL_PLOTS: Record<PanelId, PanelPlotState> = {
 
 const INITIAL_AUTH_STATE: AuthState = {
   accessMode: "open",
+  adminUsername: "ms",
   hasAdminPassword: false,
   isAuthenticated: true,
   isAdmin: false
@@ -288,6 +290,22 @@ function ChevronRightIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+function AccessKeyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M14.5 6.5a4.5 4.5 0 1 1-3.83 6.86L4 20v-3l1.8-1.8H8V13h2.2l1.3-1.3A4.48 4.48 0 0 1 14.5 6.5Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="14.5" cy="11" r="1.2" fill="currentColor" />
     </svg>
   );
 }
@@ -706,8 +724,10 @@ function App() {
   const [accessCodeInput, setAccessCodeInput] = useState<string>("");
   const [authMessage, setAuthMessage] = useState<string>("");
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
+  const [adminUsernameInput, setAdminUsernameInput] = useState<string>("ms");
   const [adminPasswordInput, setAdminPasswordInput] = useState<string>("");
   const [adminPasswordConfirm, setAdminPasswordConfirm] = useState<string>("");
+  const [adminLoginUsername, setAdminLoginUsername] = useState<string>("ms");
   const [adminLoginPassword, setAdminLoginPassword] = useState<string>("");
   const [changeCurrentPassword, setChangeCurrentPassword] = useState<string>("");
   const [changeNewPassword, setChangeNewPassword] = useState<string>("");
@@ -778,6 +798,7 @@ function App() {
       const payload = (await response.json()) as Partial<AuthState>;
       const nextState: AuthState = {
         accessMode: payload.accessMode === "code" ? "code" : "open",
+        adminUsername: typeof payload.adminUsername === "string" ? payload.adminUsername : "ms",
         hasAdminPassword: Boolean(payload.hasAdminPassword),
         isAuthenticated: Boolean(payload.isAuthenticated),
         isAdmin: Boolean(payload.isAdmin)
@@ -1464,13 +1485,17 @@ function App() {
     setAdminMessage("");
     setIsAdminModalOpen(true);
     setAdminAccessModeDraft(authState.accessMode);
+    setAdminUsernameInput(authState.adminUsername ?? "ms");
+    setAdminLoginUsername(authState.adminUsername ?? "ms");
   };
 
   const closeAdminModal = () => {
     setAdminMessage("");
     setIsAdminModalOpen(false);
+    setAdminUsernameInput(authState.adminUsername ?? "ms");
     setAdminPasswordInput("");
     setAdminPasswordConfirm("");
+    setAdminLoginUsername(authState.adminUsername ?? "ms");
     setAdminLoginPassword("");
     setChangeCurrentPassword("");
     setChangeNewPassword("");
@@ -1488,14 +1513,17 @@ function App() {
       const response = await fetch("/api/auth/admin/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: adminPasswordInput })
+        body: JSON.stringify({
+          username: adminUsernameInput.trim(),
+          password: adminPasswordInput
+        })
       });
       const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
       if (!response.ok) {
         throw new Error(extractErrorMessage(payload));
       }
 
-      setAdminMessage("Admin password saved. Log in to manage access.");
+      setAdminMessage("Admin account saved. Log in to manage access.");
       await refreshAuthState();
       setAdminPasswordInput("");
       setAdminPasswordConfirm("");
@@ -1512,7 +1540,10 @@ function App() {
       const response = await fetch("/api/auth/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: adminLoginPassword })
+        body: JSON.stringify({
+          username: adminLoginUsername.trim(),
+          password: adminLoginPassword
+        })
       });
       const payload = (await response.json().catch(() => null)) as { detail?: unknown } | null;
       if (!response.ok) {
@@ -1619,168 +1650,197 @@ function App() {
   const isAccessLocked = !authLoading && authState.accessMode === "code" && !authState.isAuthenticated;
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="sidebar-title">HeartSound Analysis Tool</div>
-        <button
-          type="button"
-          className="placeholder-button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-        >
-          Upload File
-        </button>
-        <button
-          type="button"
-          className="placeholder-button"
-          onClick={() => folderInputRef.current?.click()}
-          disabled={uploading}
-        >
-          Upload Folder
-        </button>
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,.xlsx"
-          multiple
-          className="hidden-input"
-          onChange={handleUploadInputChange}
-        />
-        <input
-          ref={folderInputRef}
-          type="file"
-          multiple
-          className="hidden-input"
-          onChange={handleFolderInputChange}
-        />
-
-        <input
-          type="text"
-          className="file-search-input"
-          placeholder="Search files"
-          value={searchText}
-          onChange={(event) => setSearchText(event.target.value)}
-        />
-
-        <div className="file-list-placeholder">
-          <div className="file-list-title">File List</div>
-          <div className="file-list-subtitle">Click file to assign to Panel {activePanelId}</div>
-          <div className="file-list-scroller">
-            {filesLoading ? (
-              <div className="file-list-empty">Loading...</div>
-            ) : filteredFiles.length === 0 ? (
-              <div className="file-list-empty">No uploaded files</div>
-            ) : (
-              filteredFiles.map((file) => (
-                <button
-                  key={file.fileId}
-                  type="button"
-                  className={
-                    file.fileId === activePanel.fileId ? "file-item active-target" : "file-item"
-                  }
-                  onClick={() => assignFileToActivePanel(file)}
-                >
-                  <div className="file-item-name">{file.originalName}</div>
-                  {file.relativePath ? <div className="file-item-path">{file.relativePath}</div> : null}
-                  <div className="file-item-meta">
-                    <span>{formatTimestamp(file.uploadedAt)}</span>
-                    <span>rows {file.rowCount}</span>
-                  </div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-
-        <button
-          type="button"
-          className="danger-button"
-          disabled={files.length === 0}
-          onClick={() => {
-            setSelectedDeleteIds([]);
-            setIsDeleteModalOpen(true);
-          }}
-        >
-          Delete Files
-        </button>
-        {statusMessage ? <div className="status-message">{statusMessage}</div> : null}
-      </aside>
-
-      <main className="main-area">
-        <header className="toolbar">
-          <div className="split-buttons">
-            {SPLIT_BUTTONS.map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                className={mode === splitMode ? "split-button active" : "split-button"}
-                onClick={() => setSplitMode(mode)}
-              >
-                {mode === 1 ? "1 Panel" : mode === 2 ? "2 Panels" : "4 Panels"}
-              </button>
-            ))}
-          </div>
-          <div className="toolbar-status">
-            <span className={`health-badge ${healthStatus}`}>API: {healthStatus}</span>
-            <span className="health-badge">{authState.accessMode === "code" ? "Access: code" : "Access: open"}</span>
-            <span>Active Panel: {activePanelId}</span>
-            <button type="button" className="split-button" onClick={openAdminModal}>
-              Admin
-            </button>
-          </div>
-        </header>
-
-        <section className={`dashboard split-${splitMode}`}>
-          {visiblePanelIds.map((panelId) => {
-            const panel = panels.find((item) => item.panelId === panelId)!;
-            return (
-              <PanelCard
-                key={panelId}
-                panel={panel}
-                plotState={panelPlots[panelId]}
-                isActive={panelId === activePanelId}
-                onActivate={setActivePanelId}
-                onToggleSeries={togglePanelSeries}
-                onOpenSettings={openSettingsForPanel}
-                onResetPanel={resetPanel}
-                onSliderRangeCommit={applyPanelRange}
-              />
-            );
-          })}
-        </section>
-      </main>
-
+    <>
       {isAccessLocked ? (
-        <div className="auth-overlay" role="presentation">
-          <div className="auth-card">
-            <div className="auth-title">Temporary Access Code</div>
-            <div className="auth-text">
-              Ask the administrator for the 5-minute numeric code printed in the backend terminal.
+        <div className="auth-shell">
+          <div className="auth-hero">
+            <div className="auth-brand-mark">
+              <AccessKeyIcon />
             </div>
-            <input
-              className="settings-input"
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              placeholder="Enter numeric code"
-              value={accessCodeInput}
-              onChange={(event) => setAccessCodeInput(event.target.value.replace(/\D/g, ""))}
-            />
-            <div className="auth-actions">
-              <button type="button" className="split-button" onClick={() => void handleAccessCodeLogin()}>
-                Enter Site
-              </button>
-              <button type="button" className="split-button" onClick={openAdminModal}>
-                Admin
-              </button>
+            <div className="auth-hero-title">HeartSound Analysis Tool</div>
+            <div className="auth-hero-text">
+              Temporary access is protected. Enter the 5-minute numeric code printed in the backend terminal.
             </div>
-            {authMessage ? <div className="auth-message">{authMessage}</div> : null}
+            <div className="auth-hero-badges">
+              <span className={`health-badge ${healthStatus}`}>API: {healthStatus}</span>
+              <span className="health-badge">Access: code</span>
+            </div>
           </div>
-        </div>
-      ) : null}
 
-      {settingsPanel && settingsDraft ? (
+          <form
+            className="auth-card auth-login-card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleAccessCodeLogin();
+            }}
+          >
+            <div className="auth-card-header">
+              <div className="auth-card-title">Sign in with one-time code</div>
+              <div className="auth-card-subtitle">Valid for 5 minutes after the admin generates it.</div>
+            </div>
+            <label className="settings-field">
+              <span className="settings-label">One-time numeric code</span>
+              <input
+                className="settings-input auth-code-input"
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                autoFocus
+                placeholder="6-digit code"
+                value={accessCodeInput}
+                onChange={(event) => setAccessCodeInput(event.target.value.replace(/\D/g, ""))}
+              />
+            </label>
+            <button type="submit" className="auth-primary-button">
+              Open Tool
+            </button>
+            <button type="button" className="auth-secondary-button" onClick={openAdminModal}>
+              Admin settings
+            </button>
+            {authMessage ? <div className="auth-message auth-message-error">{authMessage}</div> : null}
+            <div className="auth-help-text">
+              If you do not have a code, ask the administrator to generate one from the running launcher session.
+            </div>
+          </form>
+        </div>
+      ) : (
+        <div className="app-shell">
+          <aside className="sidebar">
+            <div className="sidebar-title">HeartSound Analysis Tool</div>
+            <button
+              type="button"
+              className="placeholder-button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+            >
+              Upload File
+            </button>
+            <button
+              type="button"
+              className="placeholder-button"
+              onClick={() => folderInputRef.current?.click()}
+              disabled={uploading}
+            >
+              Upload Folder
+            </button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.xlsx"
+              multiple
+              className="hidden-input"
+              onChange={handleUploadInputChange}
+            />
+            <input
+              ref={folderInputRef}
+              type="file"
+              multiple
+              className="hidden-input"
+              onChange={handleFolderInputChange}
+            />
+
+            <input
+              type="text"
+              className="file-search-input"
+              placeholder="Search files"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+            />
+
+            <div className="file-list-placeholder">
+              <div className="file-list-title">File List</div>
+              <div className="file-list-subtitle">Click file to assign to Panel {activePanelId}</div>
+              <div className="file-list-scroller">
+                {filesLoading ? (
+                  <div className="file-list-empty">Loading...</div>
+                ) : filteredFiles.length === 0 ? (
+                  <div className="file-list-empty">No uploaded files</div>
+                ) : (
+                  filteredFiles.map((file) => (
+                    <button
+                      key={file.fileId}
+                      type="button"
+                      className={
+                        file.fileId === activePanel.fileId ? "file-item active-target" : "file-item"
+                      }
+                      onClick={() => assignFileToActivePanel(file)}
+                    >
+                      <div className="file-item-name">{file.originalName}</div>
+                      {file.relativePath ? <div className="file-item-path">{file.relativePath}</div> : null}
+                      <div className="file-item-meta">
+                        <span>{formatTimestamp(file.uploadedAt)}</span>
+                        <span>rows {file.rowCount}</span>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="danger-button"
+              disabled={files.length === 0}
+              onClick={() => {
+                setSelectedDeleteIds([]);
+                setIsDeleteModalOpen(true);
+              }}
+            >
+              Delete Files
+            </button>
+            {statusMessage ? <div className="status-message">{statusMessage}</div> : null}
+          </aside>
+
+          <main className="main-area">
+            <header className="toolbar">
+              <div className="split-buttons">
+                {SPLIT_BUTTONS.map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={mode === splitMode ? "split-button active" : "split-button"}
+                    onClick={() => setSplitMode(mode)}
+                  >
+                    {mode === 1 ? "1 Panel" : mode === 2 ? "2 Panels" : "4 Panels"}
+                  </button>
+                ))}
+              </div>
+              <div className="toolbar-status">
+                <span className={`health-badge ${healthStatus}`}>API: {healthStatus}</span>
+                <span className="health-badge">
+                  {authState.accessMode === "code" ? "Access: code" : "Access: open"}
+                </span>
+                <span>Active Panel: {activePanelId}</span>
+                <button type="button" className="split-button" onClick={openAdminModal}>
+                  Admin
+                </button>
+              </div>
+            </header>
+
+            <section className={`dashboard split-${splitMode}`}>
+              {visiblePanelIds.map((panelId) => {
+                const panel = panels.find((item) => item.panelId === panelId)!;
+                return (
+                  <PanelCard
+                    key={panelId}
+                    panel={panel}
+                    plotState={panelPlots[panelId]}
+                    isActive={panelId === activePanelId}
+                    onActivate={setActivePanelId}
+                    onToggleSeries={togglePanelSeries}
+                    onOpenSettings={openSettingsForPanel}
+                    onResetPanel={resetPanel}
+                    onSliderRangeCommit={applyPanelRange}
+                  />
+                );
+              })}
+            </section>
+          </main>
+        </div>
+      )}
+
+      {!isAccessLocked && settingsPanel && settingsDraft ? (
         <div className="modal-overlay" role="presentation">
           <div className="modal-card" role="dialog" aria-modal="true" aria-label="Panel settings modal">
             <div className="modal-title">Panel {settingsPanel.panelId} Settings</div>
@@ -1914,8 +1974,17 @@ function App() {
               {!authState.hasAdminPassword ? (
                 <>
                   <div className="settings-label">
-                    Set the first admin password. This password is used to open the access settings later.
+                    Set the first admin ID and password. This account is used to open the access settings later.
                   </div>
+                  <label className="settings-field">
+                    <span className="settings-label">Admin ID</span>
+                    <input
+                      className="settings-input"
+                      type="text"
+                      value={adminUsernameInput}
+                      onChange={(event) => setAdminUsernameInput(event.target.value)}
+                    />
+                  </label>
                   <label className="settings-field">
                     <span className="settings-label">Admin Password</span>
                     <input
@@ -1937,7 +2006,16 @@ function App() {
                 </>
               ) : !authState.isAdmin ? (
                 <>
-                  <div className="settings-label">Enter the admin password to manage login settings.</div>
+                  <div className="settings-label">Enter the admin ID and password to manage login settings.</div>
+                  <label className="settings-field">
+                    <span className="settings-label">Admin ID</span>
+                    <input
+                      className="settings-input"
+                      type="text"
+                      value={adminLoginUsername}
+                      onChange={(event) => setAdminLoginUsername(event.target.value)}
+                    />
+                  </label>
                   <label className="settings-field">
                     <span className="settings-label">Admin Password</span>
                     <input
@@ -1950,6 +2028,9 @@ function App() {
                 </>
               ) : (
                 <>
+                  <div className="settings-label">
+                    Admin ID: <strong>{authState.adminUsername ?? "ms"}</strong>
+                  </div>
                   <label className="settings-field">
                     <span className="settings-label">Access Mode</span>
                     <select
@@ -2016,7 +2097,7 @@ function App() {
                   disabled={adminSubmitting}
                   onClick={() => void handleAdminSetup()}
                 >
-                  Save Admin Password
+                  Save Admin Account
                 </button>
               ) : !authState.isAdmin ? (
                 <button
@@ -2060,7 +2141,7 @@ function App() {
         </div>
       ) : null}
 
-      {isDeleteModalOpen ? (
+      {!isAccessLocked && isDeleteModalOpen ? (
         <div className="modal-overlay" role="presentation">
           <div className="modal-card" role="dialog" aria-modal="true" aria-label="Delete files modal">
             <div className="modal-title">Delete Files</div>
@@ -2105,7 +2186,7 @@ function App() {
           </div>
         </div>
       ) : null}
-    </div>
+    </>
   );
 }
 

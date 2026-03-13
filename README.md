@@ -9,6 +9,7 @@ Internal dashboard for uploading heart sound result files and visualizing them i
 - `backend/`: FastAPI + SQLite + pandas service
 - `scripts/`: launcher and helper scripts
 - `start`: shortest CLI entrypoint for starting frontend + backend together
+- `code`: shortest CLI entrypoint for generating a 5-minute numeric access code
 - `run_dev.sh`: compatibility wrapper for the launcher
 - `HeartSound-Launcher.command`: macOS double-click launcher
 - `backend/storage/uploads`: uploaded raw files
@@ -79,6 +80,21 @@ From another terminal:
 ```
 
 `./health_dev.sh` returns a non-zero exit code if either frontend or backend is down.
+
+### Generate a one-time access code from the host machine
+
+```bash
+./code
+```
+
+What `./code` does:
+
+- initializes the backend DB if needed
+- forces the site access mode to `code`
+- generates a new 5-minute numeric access code
+- prints that code in the terminal on the host machine
+
+This is meant for the main computer running the tool. Users visiting the site can enter that one-time code on the login screen and then go straight into the dashboard.
 
 ## macOS double-click launcher
 

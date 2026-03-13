@@ -1,8 +1,16 @@
+import hashlib
 import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
 from .config import DATABASE_PATH
+
+DEFAULT_ADMIN_USERNAME = "ms"
+DEFAULT_ADMIN_PASSWORD = "1466"
+
+
+def _default_admin_password_hash() -> str:
+    return hashlib.sha256(DEFAULT_ADMIN_PASSWORD.encode("utf-8")).hexdigest()
 
 
 @contextmanager
@@ -40,6 +48,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS auth_settings (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 access_mode TEXT NOT NULL DEFAULT 'open',
+                admin_username TEXT,
                 admin_password_hash TEXT,
                 admin_password_updated_at TEXT
             )
@@ -51,6 +60,28 @@ def init_db() -> None:
             VALUES (1, 'open')
             ON CONFLICT(id) DO NOTHING
             """
+        )
+        auth_settings_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(auth_settings)").fetchall()
+        }
+        if "admin_username" not in auth_settings_columns:
+            connection.execute("ALTER TABLE auth_settings ADD COLUMN admin_username TEXT")
+        connection.execute(
+            """
+            UPDATE auth_settings
+            SET admin_username = COALESCE(NULLIF(admin_username, ''), ?)
+            WHERE id = 1
+            """,
+            (DEFAULT_ADMIN_USERNAME,),
+        )
+        connection.execute(
+            """
+            UPDATE auth_settings
+            SET admin_password_hash = COALESCE(admin_password_hash, ?)
+            WHERE id = 1
+            """,
+            (_default_admin_password_hash(),),
         )
         connection.execute(
             """

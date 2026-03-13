@@ -9,6 +9,7 @@ TAIL_BACKEND_PID=""
 TAIL_FRONTEND_PID=""
 BACKEND_PID=""
 FRONTEND_PID=""
+SHARE_PID=""
 STOPPING=0
 
 cleanup() {
@@ -23,6 +24,10 @@ cleanup() {
 
   if [[ "${STOPPING}" -eq 0 ]]; then
     STOPPING=1
+    SHARE_PID="$(read_pid_file "${SHARE_PID_FILE}")"
+    if [[ -n "${SHARE_PID}" ]] && is_pid_running "${SHARE_PID}"; then
+      kill "${SHARE_PID}" >/dev/null 2>&1 || true
+    fi
     if [[ -n "${FRONTEND_PID}" ]] && is_pid_running "${FRONTEND_PID}"; then
       kill "${FRONTEND_PID}" >/dev/null 2>&1 || true
     fi
@@ -41,6 +46,8 @@ cleanup() {
   clear_pid_file "${BACKEND_PID_FILE}"
   clear_pid_file "${FRONTEND_PID_FILE}"
   clear_pid_file "${LAUNCHER_PID_FILE}"
+  clear_pid_file "${SHARE_PID_FILE}"
+  rm -f "${SHARE_URL_FILE}"
 
   return "${exit_code}"
 }

@@ -80,7 +80,8 @@ def _clear_session_cookie(response: Response) -> None:
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
 
 
-class AdminPasswordRequest(BaseModel):
+class AdminCredentialsRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=4, max_length=128)
 
 
@@ -103,9 +104,9 @@ def get_auth_public_state(request: Request) -> dict[str, Any]:
 
 
 @app.post("/api/auth/admin/setup")
-def setup_admin_password(payload: AdminPasswordRequest) -> dict[str, str]:
+def setup_admin_password(payload: AdminCredentialsRequest) -> dict[str, str]:
     try:
-        set_initial_admin_password(payload.password)
+        set_initial_admin_password(payload.username, payload.password)
         return {"status": "configured"}
     except AuthError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
@@ -113,11 +114,11 @@ def setup_admin_password(payload: AdminPasswordRequest) -> dict[str, str]:
 
 @app.post("/api/auth/admin/login")
 def admin_login(
-    payload: AdminPasswordRequest,
+    payload: AdminCredentialsRequest,
     response: Response,
 ) -> dict[str, str]:
     try:
-        session = login_admin(payload.password)
+        session = login_admin(payload.username, payload.password)
         _set_session_cookie(response, session.token, session.expires_at)
         return {"status": "ok", "role": session.role}
     except AuthError as error:

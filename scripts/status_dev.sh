@@ -24,6 +24,7 @@ report_process() {
 report_process "launcher" "${LAUNCHER_PID_FILE}"
 report_process "backend" "${BACKEND_PID_FILE}"
 report_process "frontend" "${FRONTEND_PID_FILE}"
+report_process "share" "${SHARE_PID_FILE}"
 
 if port_in_use "${BACKEND_PORT}"; then
   print_info "backend port ${BACKEND_PORT} is listening"
@@ -39,3 +40,8 @@ fi
 
 print_info "Backend log: ${BACKEND_LOG}"
 print_info "Frontend log: ${FRONTEND_LOG}"
+print_info "Share log: ${SHARE_LOG}"
+
+if [[ -f "${SHARE_URL_FILE}" ]]; then
+  print_info "Share URL: $(cat "${SHARE_URL_FILE}")"
+fi

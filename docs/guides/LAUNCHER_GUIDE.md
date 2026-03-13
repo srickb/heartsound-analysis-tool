@@ -15,6 +15,7 @@ launcher의 목적은 다음과 같습니다.
 현재 프로젝트에는 아래 실행 도구들이 추가되어 있습니다.
 
 - `./start`
+- `./code`
 - `./run_dev.sh`
 - `./stop_dev.sh`
 - `./status_dev.sh`
@@ -45,6 +46,7 @@ launcher 관련 파일은 아래와 같습니다.
 ### 루트 진입점
 
 - `start`: 전체 실행용 기본 진입점
+- `code`: 5분짜리 일회용 숫자 코드 생성
 - `run_dev.sh`: 전체 실행
 - `stop_dev.sh`: 전체 종료
 - `status_dev.sh`: 프로세스/포트 상태 확인
@@ -247,14 +249,44 @@ frontend=up url=http://127.0.0.1:5173/
 
 ```bash
 make dev
+make code
 make stop
 make status
 make health
 ```
 
-동작은 각각 `./start`, `./stop_dev.sh`, `./status_dev.sh`, `./health_dev.sh`와 같습니다.
+동작은 각각 `./start`, `./code`, `./stop_dev.sh`, `./status_dev.sh`, `./health_dev.sh`와 같습니다.
 
-## 10. macOS에서 더블클릭 실행하는 방법
+## 10. 일회용 숫자 코드를 호스트 컴퓨터에서 발급하는 방법
+
+관리자 UI에 들어가지 않고, 이 툴을 실제로 실행 중인 메인 컴퓨터에서 바로 일회용 코드를 만들고 싶다면 아래 명령을 사용하면 됩니다.
+
+```bash
+./code
+```
+
+이 스크립트는 다음을 수행합니다.
+
+1. backend Python 실행 파일을 찾습니다.
+2. backend 의존성이 설치되어 있는지 확인합니다.
+3. DB가 없으면 초기화합니다.
+4. 사이트 접근 모드를 자동으로 `code`로 바꿉니다.
+5. 5분짜리 숫자 코드 하나를 생성합니다.
+6. 생성된 코드를 현재 터미널에 출력합니다.
+
+예시 출력:
+
+```text
+[INFO] Generating a new 5-minute numeric access code...
+One-time access code generated: 482193 (valid for 5 minutes, expires ...)
+Access mode set to: code
+Access code expires at: ...
+[OK] A one-time access code was generated on this machine.
+```
+
+즉, 운영자는 메인 컴퓨터에서 `./code`만 치고, 방문 사용자에게 그 숫자만 전달하면 됩니다. 사용자는 사이트 첫 화면에서 이 숫자를 입력하면 곧바로 툴 화면으로 들어갑니다.
+
+## 11. macOS에서 더블클릭 실행하는 방법
 
 Finder에서 아래 파일을 더블클릭하면 됩니다.
 

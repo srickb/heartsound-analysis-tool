@@ -23,10 +23,13 @@ PID_DIR="${RUNTIME_DIR}/pids"
 BACKEND_LOG="${LOG_DIR}/backend.log"
 FRONTEND_LOG="${LOG_DIR}/frontend.log"
 LAUNCHER_LOG="${LOG_DIR}/launcher.log"
+SHARE_LOG="${LOG_DIR}/share.log"
 
 BACKEND_PID_FILE="${PID_DIR}/backend.pid"
 FRONTEND_PID_FILE="${PID_DIR}/frontend.pid"
 LAUNCHER_PID_FILE="${PID_DIR}/launcher.pid"
+SHARE_PID_FILE="${PID_DIR}/share.pid"
+SHARE_URL_FILE="${RUNTIME_DIR}/share-url.txt"
 
 if [[ -t 1 ]]; then
   COLOR_BLUE="$(printf '\033[1;34m')"
@@ -215,10 +218,16 @@ show_log_tail() {
 
 cleanup_stale_pid_files() {
   local pid
-  for pid_file in "${BACKEND_PID_FILE}" "${FRONTEND_PID_FILE}" "${LAUNCHER_PID_FILE}"; do
+  for pid_file in "${BACKEND_PID_FILE}" "${FRONTEND_PID_FILE}" "${LAUNCHER_PID_FILE}" "${SHARE_PID_FILE}"; do
     pid="$(read_pid_file "${pid_file}")"
     if [[ -n "${pid}" ]] && ! is_pid_running "${pid}"; then
       clear_pid_file "${pid_file}"
     fi
   done
+
+  local share_pid
+  share_pid="$(read_pid_file "${SHARE_PID_FILE}")"
+  if [[ -z "${share_pid}" ]] || ! is_pid_running "${share_pid}"; then
+    rm -f "${SHARE_URL_FILE}"
+  fi
 }

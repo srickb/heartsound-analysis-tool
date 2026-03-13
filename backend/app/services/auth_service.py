@@ -60,7 +60,7 @@ def get_auth_settings() -> dict[str, str | bool | None]:
     with db_connection() as connection:
         row = connection.execute(
             """
-            SELECT access_mode, admin_password_hash
+            SELECT access_mode, admin_username, admin_password_hash
             FROM auth_settings
             WHERE id = 1
             """
@@ -69,11 +69,13 @@ def get_auth_settings() -> dict[str, str | bool | None]:
     if row is None:
         return {
             "accessMode": ACCESS_MODE_OPEN,
+            "adminUsername": None,
             "hasAdminPassword": False,
         }
 
     return {
         "accessMode": row["access_mode"],
+        "adminUsername": row["admin_username"],
         "hasAdminPassword": bool(row["admin_password_hash"]),
     }
 
@@ -86,13 +88,17 @@ def get_public_auth_state(session_token: str | None) -> dict[str, str | bool | N
 
     return {
         "accessMode": settings["accessMode"],
+        "adminUsername": settings["adminUsername"],
         "hasAdminPassword": settings["hasAdminPassword"],
         "isAuthenticated": is_authenticated,
         "isAdmin": is_admin,
     }
 
 
-def set_initial_admin_password(password: str) -> None:
+def set_initial_admin_password(username: str, password: str) -> None:
+    username = username.strip()
+    if len(username) < 1:
+        raise AuthError("admin ID is required", status_code=400)
     if len(password) < 4:
         raise AuthError("admin password must be at least 4 characters", status_code=400)
 
@@ -104,10 +110,10 @@ def set_initial_admin_password(password: str) -> None:
         connection.execute(
             """
             UPDATE auth_settings
-            SET admin_password_hash = ?, admin_password_updated_at = ?
+            SET admin_username = ?, admin_password_hash = ?, admin_password_updated_at = ?
             WHERE id = 1
             """,
-            (_hash_password(password), _to_iso(_utcnow())),
+            (username, _hash_password(password), _to_iso(_utcnow())),
         )
 
 
@@ -115,7 +121,11 @@ def change_admin_password(current_password: str, new_password: str) -> None:
     if len(new_password) < 4:
         raise AuthError("new admin password must be at least 4 characters", status_code=400)
 
-    if not verify_admin_password(current_password):
+    settings = get_auth_settings()
+    admin_username = settings["adminUsername"]
+    if not isinstance(admin_username, str) or not verify_admin_credentials(
+        admin_username, current_password
+    ):
         raise AuthError("current admin password is incorrect", status_code=401)
 
     with db_connection() as connection:
@@ -129,15 +139,18 @@ def change_admin_password(current_password: str, new_password: str) -> None:
         )
 
 
-def verify_admin_password(password: str) -> bool:
+def verify_admin_credentials(username: str, password: str) -> bool:
+    username = username.strip()
     with db_connection() as connection:
         row = connection.execute(
-            "SELECT admin_password_hash FROM auth_settings WHERE id = 1"
+            "SELECT admin_username, admin_password_hash FROM auth_settings WHERE id = 1"
         ).fetchone()
 
-    if row is None or not row["admin_password_hash"]:
+    if row is None or not row["admin_username"] or not row["admin_password_hash"]:
         return False
-    return secrets.compare_digest(row["admin_password_hash"], _hash_password(password))
+    return secrets.compare_digest(row["admin_username"], username) and secrets.compare_digest(
+        row["admin_password_hash"], _hash_password(password)
+    )
 
 
 def update_access_mode(access_mode: str) -> str:
@@ -232,9 +245,9 @@ def require_admin_access(session_token: str | None) -> SessionRecord:
     return session
 
 
-def login_admin(password: str) -> SessionRecord:
-    if not verify_admin_password(password):
-        raise AuthError("admin password is incorrect", status_code=401)
+def login_admin(username: str, password: str) -> SessionRecord:
+    if not verify_admin_credentials(username, password):
+        raise AuthError("admin ID or password is incorrect", status_code=401)
     return create_session("admin", ADMIN_SESSION_TTL_HOURS)
 
 

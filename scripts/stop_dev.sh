@@ -44,14 +44,17 @@ stop_pid() {
 launcher_pid="$(read_pid_file "${LAUNCHER_PID_FILE}")"
 backend_pid="$(read_pid_file "${BACKEND_PID_FILE}")"
 frontend_pid="$(read_pid_file "${FRONTEND_PID_FILE}")"
+share_pid="$(read_pid_file "${SHARE_PID_FILE}")"
 
-if [[ -z "${launcher_pid}" && -z "${backend_pid}" && -z "${frontend_pid}" ]]; then
+if [[ -z "${launcher_pid}" && -z "${backend_pid}" && -z "${frontend_pid}" && -z "${share_pid}" ]]; then
   print_info "No managed launcher processes are running."
   exit 0
 fi
 
+stop_pid "share" "${SHARE_PID_FILE}"
 stop_pid "launcher" "${LAUNCHER_PID_FILE}"
 stop_pid "frontend" "${FRONTEND_PID_FILE}"
 stop_pid "backend" "${BACKEND_PID_FILE}"
+rm -f "${SHARE_URL_FILE}"
 
 print_success "Stop sequence completed."

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: dev stop health status
+.PHONY: dev stop health status code share stop-share
 
 dev:
 	./start
@@ -13,3 +13,12 @@ health:
 
 status:
 	./status_dev.sh
+
+code:
+	./code
+
+share:
+	./share
+
+stop-share:
+	./stop_share.sh
