@@ -14,7 +14,7 @@ from app.db import db_connection
 
 SUPPORTED_EXTENSIONS = {".csv", ".xlsx"}
 WORKSPACE_KINDS = {"heartsound", "ecg"}
-FILE_ROLES = {"data", "parameter"}
+FILE_ROLES = {"data", "parameter", "unsupervised"}
 HEARTSOUND_REQUIRED_COLUMNS = [
     "Time_Index",
     "Amplitude",
@@ -139,6 +139,16 @@ ECG_PARAMETER_REQUIRED_COLUMNS = [
     "t_avg",
 ]
 ECG_PARAMETER_NUMERIC_COLUMNS = ECG_PARAMETER_REQUIRED_COLUMNS
+UNSUPERVISED_REQUIRED_COLUMNS = [
+    "Cycle Num",
+    "Cycle Start",
+    "Cycle End",
+    "Cluster",
+]
+UNSUPERVISED_NUMERIC_COLUMNS = [
+    "Cycle Start",
+    "Cycle End",
+]
 
 
 class UploadValidationError(Exception):
@@ -177,6 +187,9 @@ def _validate_dataframe(dataframe: pd.DataFrame, workspace_kind: str, file_role:
     elif file_role == "parameter" and workspace_kind == "heartsound":
         required_columns = HEARTSOUND_PARAMETER_REQUIRED_COLUMNS
         numeric_columns = HEARTSOUND_PARAMETER_NUMERIC_COLUMNS
+    elif file_role == "unsupervised":
+        required_columns = UNSUPERVISED_REQUIRED_COLUMNS
+        numeric_columns = UNSUPERVISED_NUMERIC_COLUMNS
     elif file_role == "data" and workspace_kind == "ecg":
         required_columns = ECG_REQUIRED_COLUMNS
         numeric_columns = ECG_NUMERIC_COLUMNS
@@ -223,7 +236,7 @@ def list_files(
     if workspace_kind is not None and workspace_kind not in WORKSPACE_KINDS:
         raise UploadValidationError("workspace kind must be 'heartsound' or 'ecg'")
     if file_role is not None and file_role not in FILE_ROLES:
-        raise UploadValidationError("file role must be 'data' or 'parameter'")
+        raise UploadValidationError("file role must be 'data', 'parameter', or 'unsupervised'")
 
     with db_connection() as connection:
         if workspace_kind is None and file_role is None:
@@ -329,7 +342,7 @@ async def save_uploaded_file(
     if workspace_kind not in WORKSPACE_KINDS:
         raise UploadValidationError("workspace kind must be 'heartsound' or 'ecg'")
     if file_role not in FILE_ROLES:
-        raise UploadValidationError("file role must be 'data' or 'parameter'")
+        raise UploadValidationError("file role must be 'data', 'parameter', or 'unsupervised'")
 
     original_name = upload_file.filename or "unknown"
     extension = Path(original_name).suffix.lower()

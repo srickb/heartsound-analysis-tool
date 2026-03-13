@@ -6,7 +6,7 @@ type SplitMode = 1 | 2 | 4;
 type PanelId = 1 | 2 | 3 | 4;
 type HealthStatus = "checking" | "connected" | "failed";
 type PlotMode = "overview" | "range";
-type FileRole = "data" | "parameter";
+type FileRole = "data" | "parameter" | "unsupervised";
 type EcgMarkerMode = "major" | "point";
 type SeriesKey =
   | "amplitude"
@@ -51,7 +51,11 @@ interface PanelState {
   fileName: string | null;
   parameterFileId: string | null;
   parameterFileName: string | null;
+  unsupervisedFileId: string | null;
+  unsupervisedFileName: string | null;
   showParameterSummary: boolean;
+  showSelectedCycleHighlight: boolean;
+  showUnsupervisedOverlay: boolean;
   totalRows: number | null;
   previousRangeStart: number | null;
   previousRangeEnd: number | null;
@@ -150,6 +154,29 @@ interface PanelParameterState {
   error: string | null;
 }
 
+interface UnsupervisedCycleAnnotation {
+  cycleNumber: number;
+  startIndex: number;
+  endIndex: number;
+  cluster: string;
+}
+
+interface UnsupervisedSummaryPayload {
+  fileId: string;
+  workspaceKind: WorkspaceKind;
+  fileRole: FileRole;
+  rowCount: number;
+  startIndex: number;
+  endIndex: number;
+  cycles: UnsupervisedCycleAnnotation[];
+}
+
+interface PanelUnsupervisedState {
+  summary: UnsupervisedSummaryPayload | null;
+  loading: boolean;
+  error: string | null;
+}
+
 interface SettingsDraft {
   rangeStart: string;
   rangeEnd: string;
@@ -174,24 +201,32 @@ interface AppState {
   panels: PanelState[];
   panelPlots: Record<PanelId, PanelPlotState>;
   panelParameters: Record<PanelId, PanelParameterState>;
+  panelUnsupervised: Record<PanelId, PanelUnsupervisedState>;
   filesByWorkspace: Record<WorkspaceKind, UploadedFileMetadata[]>;
   filesLoadingByWorkspace: Record<WorkspaceKind, boolean>;
   uploadingByWorkspace: Record<WorkspaceKind, boolean>;
   searchText: string;
+  chartSearchIndexText: string;
   statusMessage: string;
   selectedDeleteIds: string[];
 }
 
 interface PanelCardProps {
   workspaceKind: WorkspaceKind;
-  splitMode: SplitMode;
   panel: PanelState;
   plotState: PanelPlotState;
   parameterState: PanelParameterState;
+  unsupervisedState: PanelUnsupervisedState;
+  searchMarkerIndex: number | null;
+  showSearchInput: boolean;
+  searchInputValue: string;
+  onSearchInputChange: (value: string) => void;
   isActive: boolean;
   onActivate: (panelId: PanelId) => void;
   onToggleSeries: (panelId: PanelId, key: SeriesKey) => void;
   onToggleParameterSummary: (panelId: PanelId) => void;
+  onToggleSelectedCycleHighlight: (panelId: PanelId) => void;
+  onToggleUnsupervisedOverlay: (panelId: PanelId) => void;
   onOpenSettings: (panelId: PanelId) => void;
   onResetPanel: (panelId: PanelId) => void;
   onSliderRangeCommit: (panelId: PanelId, start: number, end: number) => void;
@@ -270,7 +305,8 @@ const DEFAULT_STYLE_OPTIONS: PanelStyleOptions = {
 
 const FILE_ROLE_TABS: Array<{ key: FileRole; label: string }> = [
   { key: "data", label: "Data" },
-  { key: "parameter", label: "Parameter" }
+  { key: "parameter", label: "Parameter" },
+  { key: "unsupervised", label: "Unsupervised" }
 ];
 const FILE_NAME_COLLATOR = new Intl.Collator(undefined, {
   numeric: true,
@@ -285,7 +321,11 @@ const createDefaultPanelState = (panelId: PanelId, workspaceKind?: WorkspaceKind
   fileName: null,
   parameterFileId: null,
   parameterFileName: null,
+  unsupervisedFileId: null,
+  unsupervisedFileName: null,
   showParameterSummary: true,
+  showSelectedCycleHighlight: false,
+  showUnsupervisedOverlay: false,
   totalRows: null,
   previousRangeStart: null,
   previousRangeEnd: null,
@@ -305,6 +345,12 @@ const createEmptyPlotState = (): PanelPlotState => ({
 const createEmptyParameterState = (): PanelParameterState => ({
   summary: null,
   selectedCycleIndex: null,
+  loading: false,
+  error: null
+});
+
+const createEmptyUnsupervisedState = (): PanelUnsupervisedState => ({
+  summary: null,
   loading: false,
   error: null
 });
@@ -375,6 +421,12 @@ const createAppState = (): AppState => ({
     3: createEmptyParameterState(),
     4: createEmptyParameterState()
   },
+  panelUnsupervised: {
+    1: createEmptyUnsupervisedState(),
+    2: createEmptyUnsupervisedState(),
+    3: createEmptyUnsupervisedState(),
+    4: createEmptyUnsupervisedState()
+  },
   filesByWorkspace: {
     heartsound: [],
     ecg: []
@@ -388,6 +440,7 @@ const createAppState = (): AppState => ({
     ecg: false
   },
   searchText: "",
+  chartSearchIndexText: "",
   statusMessage: "",
   selectedDeleteIds: []
 });
@@ -494,7 +547,39 @@ const getFileRoleEmptyLabel = (workspace: WorkspaceKind, fileRole: FileRole): st
   if (fileRole === "parameter") {
     return workspace === "ecg" ? "No uploaded ECG parameter files" : "No uploaded HeartSound parameter files";
   }
+  if (fileRole === "unsupervised") {
+    return workspace === "ecg"
+      ? "No uploaded ECG unsupervised files"
+      : "No uploaded HeartSound unsupervised files";
+  }
   return WORKSPACE_TABS.find((item) => item.key === workspace)?.emptyLabel ?? "No files";
+};
+
+const getFileRoleLabel = (fileRole: FileRole): string => {
+  if (fileRole === "parameter") {
+    return "Parameter";
+  }
+  if (fileRole === "unsupervised") {
+    return "Unsupervised";
+  }
+  return "Data";
+};
+
+const getFileRoleActionLabel = (fileRole: FileRole, isFolderUpload: boolean): string => {
+  const roleLabel = getFileRoleLabel(fileRole);
+  return `${roleLabel} ${isFolderUpload ? "Folder" : "File"}`;
+};
+
+const getFileRoleListTitle = (fileRole: FileRole): string => `${getFileRoleLabel(fileRole)} Files`;
+
+const getFileRoleListSubtitle = (fileRole: FileRole, panelId: PanelId): string => {
+  if (fileRole === "data") {
+    return `Click file to assign to Panel ${panelId}`;
+  }
+  if (fileRole === "parameter") {
+    return `Click file to link as parameter to Panel ${panelId}`;
+  }
+  return `Click file to link as unsupervised to Panel ${panelId}`;
 };
 
 const extractAutoSyncKey = (fileName: string, workspaceKind: WorkspaceKind): string | null => {
@@ -508,9 +593,12 @@ const extractAutoSyncKey = (fileName: string, workspaceKind: WorkspaceKind): str
     const normalizedStem = stem
       .toLowerCase()
       .replace(/[_\s-]+/g, "_")
-      .replace(/(?:_rs_score|_parameter)$/i, "")
       .trim();
-    return normalizedStem || null;
+    const heartsoundMatch = normalizedStem.match(/^(\d+)_(av|mv|pv|tv)(?:_|$)/i);
+    if (heartsoundMatch) {
+      return `${heartsoundMatch[1]}_${heartsoundMatch[2].toLowerCase()}`;
+    }
+    return null;
   }
 
   const leadingNumberMatch = stem.match(/^\s*(\d+)/);
@@ -624,14 +712,20 @@ function AccessKeyIcon() {
 
 const PanelCard = memo(function PanelCard({
   workspaceKind,
-  splitMode,
   panel,
   plotState,
   parameterState,
+  unsupervisedState,
+  searchMarkerIndex,
+  showSearchInput,
+  searchInputValue,
+  onSearchInputChange,
   isActive,
   onActivate,
   onToggleSeries,
   onToggleParameterSummary,
+  onToggleSelectedCycleHighlight,
+  onToggleUnsupervisedOverlay,
   onOpenSettings,
   onResetPanel,
   onSliderRangeCommit,
@@ -673,7 +767,7 @@ const PanelCard = memo(function PanelCard({
     };
   }, [panel.previousRangeEnd, panel.previousRangeStart, panel.rangeEnd, panel.rangeStart]);
   const parameterSummary = parameterState.summary;
-  const isDualPanelLayout = splitMode === 2;
+  const unsupervisedSummary = unsupervisedState.summary;
   const selectedCycle = useMemo(() => {
     const cycles = parameterSummary?.cycles ?? [];
     if (cycles.length === 0) {
@@ -716,6 +810,8 @@ const PanelCard = memo(function PanelCard({
       ? toDataPairs(overviewPlot.x, overviewPlot.amplitude)
       : amplitudePairs;
     const ecgMarkerMode = panel.styleOptions.ecgMarkerMode;
+    const unsupervisedCycles = unsupervisedSummary?.cycles ?? [];
+    const displayedUnsupervisedCycles = unsupervisedCycles;
     const secondaryAxisMax =
       workspaceKind === "ecg"
         ? ecgMarkerMode === "point"
@@ -742,7 +838,34 @@ const PanelCard = memo(function PanelCard({
         data: amplitudePairs
       });
     }
-    if (workspaceKind === "heartsound" && selectedCycle) {
+    if (searchMarkerIndex !== null) {
+      const markerIndex = clampNumber(searchMarkerIndex, 0, maxIndex);
+      mainSeries.push({
+        name: "Search Marker",
+        type: "line",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        silent: true,
+        showSymbol: false,
+        animation: false,
+        lineStyle: { opacity: 0 },
+        itemStyle: { opacity: 0 },
+        tooltip: { show: false },
+        data: amplitudePairs.length > 0 ? [amplitudePairs[0]] : [[markerIndex, 0]],
+        markLine: {
+          silent: true,
+          symbol: ["none", "none"],
+          animation: false,
+          label: { show: false },
+          lineStyle: {
+            color: "#ff4d4f",
+            width: 1
+          },
+          data: [{ xAxis: markerIndex }]
+        }
+      });
+    }
+    if (workspaceKind === "heartsound" && selectedCycle && panel.showSelectedCycleHighlight) {
       mainSeries.push({
         name: "Selected Cycle",
         type: "line",
@@ -922,7 +1045,7 @@ const PanelCard = memo(function PanelCard({
       name: "Navigator",
       type: "line",
       xAxisIndex: 1,
-      yAxisIndex: 2,
+      yAxisIndex: 3,
       showSymbol: false,
       animation: false,
       silent: true,
@@ -936,13 +1059,113 @@ const PanelCard = memo(function PanelCard({
       data: overviewPairs
     });
 
+    if (panel.showUnsupervisedOverlay && panel.unsupervisedFileId && displayedUnsupervisedCycles.length > 0) {
+      mainSeries.push({
+        name: "Unsupervised Cycles",
+        type: "custom",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        clip: true,
+        silent: true,
+        animation: false,
+        encode: {
+          x: [0, 1],
+          y: 2,
+          tooltip: []
+        },
+        data: displayedUnsupervisedCycles.map((cycle) => [
+          cycle.startIndex,
+          cycle.endIndex,
+          0,
+          cycle.cluster,
+        ]),
+        renderItem(_params, api) {
+          const startValue = Number(api.value(0));
+          const endValue = Number(api.value(1));
+          const yValue = Number(api.value(2));
+          const cluster = String(api.value(3) ?? "");
+
+          const startPoint = api.coord([startValue, yValue]);
+          const endPoint = api.coord([endValue, yValue]);
+          const arrowSize = Math.max(6, Math.min(10, Math.abs(endPoint[0] - startPoint[0]) / 8));
+          const lineY = startPoint[1];
+          const midX = (startPoint[0] + endPoint[0]) / 2;
+          const labelY = lineY + 15;
+
+          return {
+            type: "group",
+            children: [
+              {
+                type: "line",
+                shape: {
+                  x1: startPoint[0],
+                  y1: lineY,
+                  x2: endPoint[0],
+                  y2: lineY
+                },
+                style: {
+                  stroke: "#f2cc60",
+                  lineWidth: 1.6,
+                  opacity: 0.55
+                }
+              },
+              {
+                type: "polygon",
+                shape: {
+                  points: [
+                    [startPoint[0], lineY],
+                    [startPoint[0] + arrowSize, lineY - arrowSize / 2],
+                    [startPoint[0] + arrowSize, lineY + arrowSize / 2]
+                  ]
+                },
+                style: {
+                  fill: "#f2cc60",
+                  opacity: 0.55
+                }
+              },
+              {
+                type: "polygon",
+                shape: {
+                  points: [
+                    [endPoint[0], lineY],
+                    [endPoint[0] - arrowSize, lineY - arrowSize / 2],
+                    [endPoint[0] - arrowSize, lineY + arrowSize / 2]
+                  ]
+                },
+                style: {
+                  fill: "#f2cc60",
+                  opacity: 0.55
+                }
+              },
+              {
+                type: "text",
+                style: {
+                  x: midX,
+                  y: labelY,
+                  text: cluster,
+                  fill: "#fff7d6",
+                  stroke: "rgba(22, 27, 34, 0.92)",
+                  lineWidth: 3,
+                  textAlign: "center",
+                  textVerticalAlign: "top",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  opacity: 0.92
+                }
+              }
+            ]
+          };
+        }
+      });
+    }
+
     return {
       animation: false,
       grid: [
         {
           left: 48,
           right: 50,
-          top: 14,
+          top: 28,
           bottom: 116
         },
         {
@@ -1015,6 +1238,15 @@ const PanelCard = memo(function PanelCard({
         },
         {
           type: "value",
+          min: 0,
+          max: 1,
+          axisLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: { show: false },
+          splitLine: { show: false }
+        },
+        {
+          type: "value",
           gridIndex: 1,
           axisLine: { show: false },
           axisTick: { show: false },
@@ -1044,7 +1276,7 @@ const PanelCard = memo(function PanelCard({
       ],
       series: mainSeries
     };
-  }, [activePlot, overviewPlot, panel, selectedCycle, workspaceKind]);
+  }, [activePlot, overviewPlot, panel, searchMarkerIndex, selectedCycle, unsupervisedSummary, workspaceKind]);
 
   const onDataZoom = useCallback(
     (event: {
@@ -1094,6 +1326,43 @@ const PanelCard = memo(function PanelCard({
     [onSliderRangeCommit, panel.fileId, panel.panelId, panel.totalRows]
   );
 
+  const onNavigatorClick = useCallback(
+    (event: { seriesName?: string; value?: unknown }) => {
+      if (
+        event.seriesName !== "Navigator" ||
+        !panel.fileId ||
+        panel.totalRows === null ||
+        panel.totalRows <= 0
+      ) {
+        return;
+      }
+
+      const rawValue = Array.isArray(event.value) ? event.value[0] : event.value;
+      if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) {
+        return;
+      }
+
+      const maxIndex = Math.max(panel.totalRows - 1, 0);
+      const currentWidth = Math.max(panel.rangeEnd - panel.rangeStart, 0);
+      const centeredIndex = clampNumber(Math.round(rawValue), 0, maxIndex);
+      const halfWidth = Math.floor(currentWidth / 2);
+
+      let nextStart = centeredIndex - halfWidth;
+      let nextEnd = nextStart + currentWidth;
+
+      if (nextStart < 0) {
+        nextStart = 0;
+        nextEnd = Math.min(maxIndex, currentWidth);
+      } else if (nextEnd > maxIndex) {
+        nextEnd = maxIndex;
+        nextStart = Math.max(0, maxIndex - currentWidth);
+      }
+
+      onSliderRangeCommit(panel.panelId, nextStart, nextEnd);
+    },
+    [onSliderRangeCommit, panel.fileId, panel.panelId, panel.rangeEnd, panel.rangeStart, panel.totalRows]
+  );
+
   return (
     <article
       className={isActive ? "panel-card active" : "panel-card"}
@@ -1105,6 +1374,9 @@ const PanelCard = memo(function PanelCard({
           <div className="panel-file">{panel.fileName ?? "No file assigned"}</div>
           {panel.parameterFileName ? (
             <div className="panel-linked-parameter">Parameter: {panel.parameterFileName}</div>
+          ) : null}
+          {panel.unsupervisedFileName ? (
+            <div className="panel-linked-parameter">Unsupervised: {panel.unsupervisedFileName}</div>
           ) : null}
         </div>
 
@@ -1147,6 +1419,16 @@ const PanelCard = memo(function PanelCard({
           >
             <ResetIcon />
           </button>
+          {showSearchInput ? (
+            <input
+              type="number"
+              inputMode="numeric"
+              className="panel-index-input"
+              placeholder="Index"
+              value={searchInputValue}
+              onChange={(event) => onSearchInputChange(event.target.value)}
+            />
+          ) : null}
         </div>
       </div>
 
@@ -1158,7 +1440,7 @@ const PanelCard = memo(function PanelCard({
         ) : (
           <div
             className={
-              isDualPanelLayout && showParameterSection ? "panel-chart-wrapper dual-panel" : "panel-chart-wrapper"
+              showParameterSection ? "panel-chart-wrapper dual-panel" : "panel-chart-wrapper"
             }
           >
             <div className="panel-chart-section">
@@ -1166,7 +1448,7 @@ const PanelCard = memo(function PanelCard({
                 <ReactECharts
                   option={chartOption}
                   style={{ width: "100%", height: "100%" }}
-                  onEvents={{ datazoom: onDataZoom }}
+                  onEvents={{ datazoom: onDataZoom, click: onNavigatorClick }}
                   notMerge
                   lazyUpdate
                 />
@@ -1185,6 +1467,12 @@ const PanelCard = memo(function PanelCard({
                   {formatRowNumber(rangeGuide.newRows)} rows
                 </div>
               ) : null}
+              {panel.unsupervisedFileId && unsupervisedState.loading ? (
+                <div className="panel-range-guide">Loading unsupervised cycle overlays...</div>
+              ) : null}
+              {panel.unsupervisedFileId && unsupervisedState.error ? (
+                <div className="panel-chart-error">{unsupervisedState.error}</div>
+              ) : null}
               {plotState.error ? <div className="panel-chart-error">{plotState.error}</div> : null}
             </div>
             {showParameterSection ? (
@@ -1193,8 +1481,26 @@ const PanelCard = memo(function PanelCard({
                   <div className="parameter-summary-shell">
                     <div className="parameter-summary-header">
                       <div className="parameter-summary-title">Linked parameter window</div>
-                      <div className="parameter-summary-range">
-                        rows {formatRowNumber(panel.rangeStart)} - {formatRowNumber(panel.rangeEnd)}
+                      <div className="parameter-summary-header-actions">
+                        <label className="panel-parameter-toggle parameter-highlight-toggle">
+                          <input
+                            type="checkbox"
+                            checked={panel.showSelectedCycleHighlight}
+                            onChange={() => onToggleSelectedCycleHighlight(panel.panelId)}
+                          />
+                          <span>Cycle</span>
+                        </label>
+                        <label className="panel-parameter-toggle parameter-highlight-toggle">
+                          <input
+                            type="checkbox"
+                            checked={panel.showUnsupervisedOverlay}
+                            onChange={() => onToggleUnsupervisedOverlay(panel.panelId)}
+                          />
+                          <span>Unsupervised</span>
+                        </label>
+                        <div className="parameter-summary-range">
+                          rows {formatRowNumber(panel.rangeStart)} - {formatRowNumber(panel.rangeEnd)}
+                        </div>
                       </div>
                     </div>
                     {parameterState.loading ? (
@@ -1321,10 +1627,12 @@ function App() {
     panels,
     panelPlots,
     panelParameters,
+    panelUnsupervised,
     filesByWorkspace,
     filesLoadingByWorkspace,
     uploadingByWorkspace,
     searchText,
+    chartSearchIndexText,
     statusMessage,
     selectedDeleteIds
   } = appState;
@@ -1338,6 +1646,7 @@ function App() {
   const files = filesByWorkspace[activeWorkspace];
   const filesLoading = filesLoadingByWorkspace[activeWorkspace];
   const uploading = uploadingByWorkspace[activeWorkspace];
+  const chartSearchMarkerIndex = splitMode === 1 ? parseNumericInput(chartSearchIndexText) : null;
 
   const updateAppState = useCallback((updater: (state: AppState) => AppState) => {
     setAppState((previous) => updater(previous));
@@ -1388,6 +1697,22 @@ function App() {
     [updateAppState]
   );
 
+  const setPanelUnsupervisedState = useCallback(
+    (
+      panelId: PanelId,
+      updater: (state: PanelUnsupervisedState) => PanelUnsupervisedState
+    ) => {
+      updateAppState((previous) => ({
+        ...previous,
+        panelUnsupervised: {
+          ...previous.panelUnsupervised,
+          [panelId]: updater(previous.panelUnsupervised[panelId])
+        }
+      }));
+    },
+    [updateAppState]
+  );
+
   const clearPanelPlotState = useCallback(
     (panelId: PanelId) => {
       requestSeqRef.current[panelId] += 1;
@@ -1401,6 +1726,13 @@ function App() {
       setPanelParameterState(panelId, () => createEmptyParameterState());
     },
     [setPanelParameterState]
+  );
+
+  const clearPanelUnsupervisedState = useCallback(
+    (panelId: PanelId) => {
+      setPanelUnsupervisedState(panelId, () => createEmptyUnsupervisedState());
+    },
+    [setPanelUnsupervisedState]
   );
 
   const selectPanelCycle = useCallback(
@@ -1552,6 +1884,26 @@ function App() {
     [refreshAuthState]
   );
 
+  const fetchUnsupervisedSummary = useCallback(
+    async (fileId: string, start: number, end: number): Promise<UnsupervisedSummaryPayload> => {
+      const query = new URLSearchParams({
+        start: String(start),
+        end: String(end)
+      });
+      const response = await fetch(`/api/files/${fileId}/unsupervised-summary?${query.toString()}`);
+      if (response.status === 401) {
+        await refreshAuthState();
+        throw new Error("login required");
+      }
+      const payload = (await response.json().catch(() => null)) as UnsupervisedSummaryPayload | null;
+      if (!response.ok || payload === null) {
+        throw new Error(extractErrorMessage(payload));
+      }
+      return payload;
+    },
+    [refreshAuthState]
+  );
+
   const requestOverviewPlot = useCallback(
     async (panelId: PanelId, fileId: string, setAsCurrent = true) => {
       const requestSeq = ++requestSeqRef.current[panelId];
@@ -1669,6 +2021,33 @@ function App() {
       }
     },
     [fetchParameterSummary, setPanelParameterState]
+  );
+
+  const requestUnsupervisedSummaryForPanel = useCallback(
+    async (panelId: PanelId, fileId: string, start: number, end: number) => {
+      setPanelUnsupervisedState(panelId, (state) => ({
+        ...state,
+        loading: true,
+        error: null
+      }));
+
+      try {
+        const payload = await fetchUnsupervisedSummary(fileId, start, end);
+        setPanelUnsupervisedState(panelId, () => ({
+          summary: payload,
+          loading: false,
+          error: null
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "failed to load unsupervised summary";
+        setPanelUnsupervisedState(panelId, (state) => ({
+          ...state,
+          loading: false,
+          error: message
+        }));
+      }
+    },
+    [fetchUnsupervisedSummary, setPanelUnsupervisedState]
   );
 
   useEffect(() => {
@@ -1902,6 +2281,11 @@ function App() {
         } else {
           clearPanelParameterState(panelId);
         }
+        if (panel.unsupervisedFileId) {
+          void requestUnsupervisedSummaryForPanel(panelId, panel.unsupervisedFileId, clampedStart, clampedEnd);
+        } else {
+          clearPanelUnsupervisedState(panelId);
+        }
         return;
       }
 
@@ -1910,13 +2294,20 @@ function App() {
       } else {
         clearPanelParameterState(panelId);
       }
+      if (panel.unsupervisedFileId) {
+        void requestUnsupervisedSummaryForPanel(panelId, panel.unsupervisedFileId, clampedStart, clampedEnd);
+      } else {
+        clearPanelUnsupervisedState(panelId);
+      }
       void requestRangePlot(panelId, panel.fileId, clampedStart, clampedEnd);
     },
     [
+      clearPanelUnsupervisedState,
       clearPanelParameterState,
       panelPlots,
       panels,
       requestOverviewPlot,
+      requestUnsupervisedSummaryForPanel,
       requestParameterSummaryForPanel,
       requestRangePlot,
       setPanelPlotState,
@@ -1976,6 +2367,7 @@ function App() {
     (file: UploadedFileMetadata) => {
       const initialRangeEnd = getInitialRangeEnd(file.rowCount, activePanel.workspaceKind);
       const matchedParameterFile = findAutoLinkedFile(files, file, "parameter");
+      const matchedUnsupervisedFile = findAutoLinkedFile(files, file, "unsupervised");
 
       updatePanelState(activePanelId, (panel) => ({
         ...panel,
@@ -1983,6 +2375,8 @@ function App() {
         fileName: file.originalName,
         parameterFileId: matchedParameterFile?.fileId ?? null,
         parameterFileName: matchedParameterFile?.originalName ?? null,
+        unsupervisedFileId: matchedUnsupervisedFile?.fileId ?? null,
+        unsupervisedFileName: matchedUnsupervisedFile?.originalName ?? null,
         totalRows: file.rowCount,
         previousRangeStart: null,
         previousRangeEnd: null,
@@ -1999,41 +2393,58 @@ function App() {
           } else {
             clearPanelParameterState(activePanelId);
           }
+          if (matchedUnsupervisedFile) {
+            await requestUnsupervisedSummaryForPanel(activePanelId, matchedUnsupervisedFile.fileId, 0, initialRangeEnd);
+          } else {
+            clearPanelUnsupervisedState(activePanelId);
+          }
         }
       })();
     },
     [
       activePanelId,
       activePanel.workspaceKind,
+      clearPanelUnsupervisedState,
       clearPanelParameterState,
       clearPanelPlotState,
       files,
       requestOverviewPlot,
+      requestUnsupervisedSummaryForPanel,
       requestParameterSummaryForPanel,
       requestRangePlot,
       updatePanelState
     ]
   );
 
-  const assignParameterFileToActivePanel = useCallback(
-    (file: UploadedFileMetadata) => {
+  const assignSupportFileToActivePanel = useCallback(
+    (file: UploadedFileMetadata, fileRole: Extract<FileRole, "parameter" | "unsupervised">) => {
       updatePanelState(activePanelId, (panel) => ({
         ...panel,
-        parameterFileId: file.fileId,
-        parameterFileName: file.originalName
+        parameterFileId: fileRole === "parameter" ? file.fileId : panel.parameterFileId,
+        parameterFileName: fileRole === "parameter" ? file.originalName : panel.parameterFileName,
+        unsupervisedFileId: fileRole === "unsupervised" ? file.fileId : panel.unsupervisedFileId,
+        unsupervisedFileName: fileRole === "unsupervised" ? file.originalName : panel.unsupervisedFileName
       }));
 
       const currentPanel = panels.find((panel) => panel.panelId === activePanelId);
-      if (currentPanel?.fileId && currentPanel.totalRows !== null && currentPanel.totalRows > 0) {
+      if (fileRole === "parameter" && currentPanel?.fileId && currentPanel.totalRows !== null && currentPanel.totalRows > 0) {
         void requestParameterSummaryForPanel(activePanelId, file.fileId, currentPanel.rangeStart, currentPanel.rangeEnd);
-      } else {
+      } else if (fileRole === "parameter") {
         clearPanelParameterState(activePanelId);
+      }
+
+      if (fileRole === "unsupervised" && currentPanel?.fileId && currentPanel.totalRows !== null && currentPanel.totalRows > 0) {
+        void requestUnsupervisedSummaryForPanel(activePanelId, file.fileId, currentPanel.rangeStart, currentPanel.rangeEnd);
+      } else if (fileRole === "unsupervised") {
+        clearPanelUnsupervisedState(activePanelId);
       }
     },
     [
       activePanelId,
-      clearPanelParameterState,
+      clearPanelUnsupervisedState,
       panels,
+      requestUnsupervisedSummaryForPanel,
+      clearPanelParameterState,
       requestParameterSummaryForPanel,
       updatePanelState
     ]
@@ -2053,12 +2464,14 @@ function App() {
       }));
       clearPanelPlotState(panelId);
       clearPanelParameterState(panelId);
+      clearPanelUnsupervisedState(panelId);
       if (settingsPanelId === panelId) {
         setSettingsPanelId(null);
         setSettingsDraft(null);
       }
     },
     [
+      clearPanelUnsupervisedState,
       clearPanelParameterState,
       clearPanelPlotState,
       panels,
@@ -2082,6 +2495,7 @@ function App() {
       }));
       clearPanelPlotState(panelId);
       clearPanelParameterState(panelId);
+      clearPanelUnsupervisedState(panelId);
       if (settingsPanelId === panelId) {
         setSettingsPanelId(null);
         setSettingsDraft(null);
@@ -2089,6 +2503,7 @@ function App() {
       await fetchFileList(workspaceKind);
     },
     [
+      clearPanelUnsupervisedState,
       clearPanelParameterState,
       clearPanelPlotState,
       fetchFileList,
@@ -2116,6 +2531,26 @@ function App() {
       updatePanelState(panelId, (panel) => ({
         ...panel,
         showParameterSummary: !panel.showParameterSummary
+      }));
+    },
+    [updatePanelState]
+  );
+
+  const togglePanelSelectedCycleHighlight = useCallback(
+    (panelId: PanelId) => {
+      updatePanelState(panelId, (panel) => ({
+        ...panel,
+        showSelectedCycleHighlight: !panel.showSelectedCycleHighlight
+      }));
+    },
+    [updatePanelState]
+  );
+
+  const togglePanelUnsupervisedOverlay = useCallback(
+    (panelId: PanelId) => {
+      updatePanelState(panelId, (panel) => ({
+        ...panel,
+        showUnsupervisedOverlay: !panel.showUnsupervisedOverlay
       }));
     },
     [updatePanelState]
@@ -2317,8 +2752,11 @@ function App() {
       const affectedParameterPanels = panels
         .filter((panel) => panel.parameterFileId && deletedSet.has(panel.parameterFileId))
         .map((panel) => panel.panelId);
+      const affectedUnsupervisedPanels = panels
+        .filter((panel) => panel.unsupervisedFileId && deletedSet.has(panel.unsupervisedFileId))
+        .map((panel) => panel.panelId);
 
-      if (affectedDataPanels.length > 0 || affectedParameterPanels.length > 0) {
+      if (affectedDataPanels.length > 0 || affectedParameterPanels.length > 0 || affectedUnsupervisedPanels.length > 0) {
         updateAppState((previous) => ({
           ...previous,
           panels: previous.panels.map((panel) =>
@@ -2330,12 +2768,19 @@ function App() {
                     parameterFileId: null,
                     parameterFileName: null
                   }
+                : panel.unsupervisedFileId && deletedSet.has(panel.unsupervisedFileId)
+                  ? {
+                      ...panel,
+                      unsupervisedFileId: null,
+                      unsupervisedFileName: null
+                    }
                 : panel
           )
         }));
         affectedDataPanels.forEach((panelId) => {
           clearPanelPlotState(panelId);
           clearPanelParameterState(panelId);
+          clearPanelUnsupervisedState(panelId);
           if (settingsPanelId === panelId) {
             setSettingsPanelId(null);
             setSettingsDraft(null);
@@ -2344,6 +2789,11 @@ function App() {
         affectedParameterPanels.forEach((panelId) => {
           if (!affectedDataPanels.includes(panelId)) {
             clearPanelParameterState(panelId);
+          }
+        });
+        affectedUnsupervisedPanels.forEach((panelId) => {
+          if (!affectedDataPanels.includes(panelId)) {
+            clearPanelUnsupervisedState(panelId);
           }
         });
       }
@@ -2651,7 +3101,7 @@ function App() {
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
             >
-              Upload {activeFileRole === "data" ? "Data File" : "Parameter File"}
+              Upload {getFileRoleActionLabel(activeFileRole, false)}
             </button>
             <button
               type="button"
@@ -2659,7 +3109,7 @@ function App() {
               onClick={() => folderInputRef.current?.click()}
               disabled={uploading}
             >
-              Upload {activeFileRole === "data" ? "Data Folder" : "Parameter Folder"}
+              Upload {getFileRoleActionLabel(activeFileRole, true)}
             </button>
 
             <input
@@ -2693,12 +3143,10 @@ function App() {
 
             <div className="file-list-placeholder">
               <div className="file-list-title">
-                {activeFileRole === "data" ? "Data Files" : "Parameter Files"}
+                {getFileRoleListTitle(activeFileRole)}
               </div>
               <div className="file-list-subtitle">
-                {activeFileRole === "data"
-                  ? `Click file to assign to Panel ${activePanelId}`
-                  : `Click file to link as parameter to Panel ${activePanelId}`}
+                {getFileRoleListSubtitle(activeFileRole, activePanelId)}
               </div>
               <div className="file-list-scroller">
                 {filesLoading ? (
@@ -2711,14 +3159,20 @@ function App() {
                       key={file.fileId}
                       type="button"
                       className={
-                        (activeFileRole === "data" ? file.fileId === activePanel.fileId : file.fileId === activePanel.parameterFileId)
+                        (
+                          activeFileRole === "data"
+                            ? file.fileId === activePanel.fileId
+                            : activeFileRole === "parameter"
+                              ? file.fileId === activePanel.parameterFileId
+                              : file.fileId === activePanel.unsupervisedFileId
+                        )
                           ? "file-item active-target"
                           : "file-item"
                       }
                       onClick={() =>
                         activeFileRole === "data"
                           ? assignDataFileToActivePanel(file)
-                          : assignParameterFileToActivePanel(file)
+                          : assignSupportFileToActivePanel(file, activeFileRole)
                       }
                     >
                       <div className="file-item-name">{file.originalName}</div>
@@ -2795,7 +3249,7 @@ function App() {
                   {authState.accessMode === "code" ? "Access: code" : "Access: open"}
                 </span>
                 <span>{activeWorkspace === "heartsound" ? "Workspace: HeartSound" : "Workspace: ECG"}</span>
-                <span>{activeFileRole === "data" ? "Files: Data" : "Files: Parameter"}</span>
+                <span>{`Files: ${getFileRoleLabel(activeFileRole)}`}</span>
                 <span>Active Panel: {activePanelId}</span>
                 <button type="button" className="split-button" onClick={openAdminModal}>
                   Admin
@@ -2810,10 +3264,19 @@ function App() {
                   <PanelCard
                     key={panelId}
                     workspaceKind={panel.workspaceKind}
-                    splitMode={splitMode}
                     panel={panel}
                     plotState={panelPlots[panelId]}
                     parameterState={panelParameters[panelId]}
+                    unsupervisedState={panelUnsupervised[panelId]}
+                    searchMarkerIndex={chartSearchMarkerIndex}
+                    showSearchInput={splitMode === 1}
+                    searchInputValue={chartSearchIndexText}
+                    onSearchInputChange={(value) =>
+                      updateAppState((previous) => ({
+                        ...previous,
+                        chartSearchIndexText: value
+                      }))
+                    }
                     isActive={panelId === activePanelId}
                     onActivate={(nextPanelId) =>
                       updateAppState((previous) => ({
@@ -2823,6 +3286,8 @@ function App() {
                     }
                     onToggleSeries={togglePanelSeries}
                     onToggleParameterSummary={togglePanelParameterSummary}
+                    onToggleSelectedCycleHighlight={togglePanelSelectedCycleHighlight}
+                    onToggleUnsupervisedOverlay={togglePanelUnsupervisedOverlay}
                     onOpenSettings={openSettingsForPanel}
                     onResetPanel={resetPanel}
                     onSliderRangeCommit={applyPanelRange}

@@ -33,6 +33,7 @@ from app.services.plot_data_service import (
     PlotDataValidationError,
     get_plot_data,
     get_parameter_summary,
+    get_unsupervised_summary,
 )
 
 
@@ -365,6 +366,24 @@ def get_file_parameter_summary(
     try:
         require_viewer_access(_session_token(request))
         return get_parameter_summary(file_id=file_id, start=start, end=end)
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    except PlotDataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PlotDataValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/files/{file_id}/unsupervised-summary")
+def get_file_unsupervised_summary(
+    file_id: str,
+    request: Request,
+    start: int | None = None,
+    end: int | None = None,
+) -> dict[str, Any]:
+    try:
+        require_viewer_access(_session_token(request))
+        return get_unsupervised_summary(file_id=file_id, start=start, end=end)
     except AuthError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except PlotDataNotFoundError as error:

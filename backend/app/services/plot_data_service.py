@@ -11,6 +11,7 @@ from app.services.downsampling import build_raw_series, downsample_minmax_with_b
 from app.services.file_service import (
     ECG_PARAMETER_REQUIRED_COLUMNS,
     HEARTSOUND_PARAMETER_REQUIRED_COLUMNS,
+    UNSUPERVISED_REQUIRED_COLUMNS,
     get_file_metadata,
 )
 
@@ -36,6 +37,7 @@ ECG_PLOT_COLUMNS = [
 ]
 HEARTSOUND_PARAMETER_COLUMNS = HEARTSOUND_PARAMETER_REQUIRED_COLUMNS
 ECG_PARAMETER_COLUMNS = ECG_PARAMETER_REQUIRED_COLUMNS
+UNSUPERVISED_COLUMNS = UNSUPERVISED_REQUIRED_COLUMNS
 TARGET_POINTS_MIN = 200
 TARGET_POINTS_MAX = 3000
 TARGET_POINTS_DEFAULT = 2400
@@ -138,6 +140,23 @@ class LRUCache:
 
 _dataframe_cache = LRUCache(max_size=16)
 _plot_cache = LRUCache(max_size=256)
+
+
+def _parse_cycle_number(value: Any, fallback: int) -> int:
+    if value is None:
+        return fallback
+
+    try:
+        if pd.notna(value):
+            if isinstance(value, str):
+                digits = "".join(character for character in value if character.isdigit())
+                if digits:
+                    return int(digits)
+            return int(float(value))
+    except Exception:
+        return fallback
+
+    return fallback
 
 
 def _resolve_target_points(panel_width: int | None, target_points: int | None) -> int:
@@ -271,6 +290,8 @@ def _load_dataframe(
         plot_columns = ECG_PLOT_COLUMNS
     elif file_role == "parameter" and workspace_kind == "ecg":
         plot_columns = ECG_PARAMETER_COLUMNS
+    elif file_role == "unsupervised":
+        plot_columns = UNSUPERVISED_COLUMNS
     else:
         raise PlotDataValidationError("unsupported workspace kind or file role")
 
@@ -287,7 +308,10 @@ def _load_dataframe(
     for column in plot_columns:
         if column not in dataframe.columns:
             raise PlotDataValidationError(f"stored file missing column: {column}")
-        dataframe[column] = pd.to_numeric(dataframe[column], errors="coerce")
+        if file_role == "unsupervised" and column == "Cluster":
+            dataframe[column] = dataframe[column].fillna("").astype(str)
+        else:
+            dataframe[column] = pd.to_numeric(dataframe[column], errors="coerce")
 
     _dataframe_cache.set(file_id, dataframe)
     return dataframe
@@ -507,6 +531,76 @@ def get_parameter_summary(
         "startIndex": requested_start,
         "endIndex": requested_end,
         "groups": groups,
+        "cycles": cycles,
+    }
+    _plot_cache.set(cache_key, payload)
+    return payload
+
+
+def get_unsupervised_summary(
+    file_id: str,
+    start: int | None,
+    end: int | None,
+) -> dict[str, Any]:
+    metadata = get_file_metadata(file_id)
+    if metadata is None:
+        raise PlotDataNotFoundError("file metadata not found")
+
+    workspace_kind = str(metadata.get("workspaceKind") or "heartsound")
+    file_role = str(metadata.get("fileRole") or "data")
+    if file_role != "unsupervised":
+        raise PlotDataValidationError("unsupervised summary is only available for unsupervised files")
+
+    row_count = int(metadata["rowCount"])
+    requested_start = max(0, int(start if start is not None else 0))
+    requested_end = max(requested_start, int(end if end is not None else requested_start))
+    cache_key = ("unsupervised-summary", file_id, requested_start, requested_end)
+    cached_payload = _plot_cache.get(cache_key)
+    if cached_payload is not None:
+        return cached_payload
+
+    stored_name = str(metadata["storedName"])
+    extension = str(metadata["extension"]).lower()
+    dataframe = _load_dataframe(file_id, stored_name, extension, workspace_kind, file_role)
+
+    cycle_start = pd.to_numeric(dataframe["Cycle Start"], errors="coerce")
+    cycle_end = pd.to_numeric(dataframe["Cycle End"], errors="coerce")
+    cycle_number = pd.to_numeric(dataframe["Cycle Num"], errors="coerce")
+    cluster_series = dataframe["Cluster"].fillna("").astype(str)
+
+    segment = dataframe.loc[(cycle_start <= requested_end) & (cycle_end >= requested_start)].copy()
+    segment["__cycle_start__"] = cycle_start.loc[segment.index]
+    segment["__cycle_end__"] = cycle_end.loc[segment.index]
+    segment["__cycle_num__"] = cycle_number.loc[segment.index]
+    segment["__cluster__"] = cluster_series.loc[segment.index]
+
+    cycles: list[dict[str, Any]] = []
+    for row_index, (_, row) in enumerate(segment.iterrows()):
+        try:
+            cycle_start_int = max(0, int(float(row["__cycle_start__"])))
+            cycle_end_int = max(0, int(float(row["__cycle_end__"])))
+        except Exception:
+            continue
+
+        cycle_num_value = row["__cycle_num__"]
+        cycle_num = _parse_cycle_number(cycle_num_value, row_index + 1)
+
+        cycles.append(
+            {
+                "cycleNumber": cycle_num,
+                "startIndex": cycle_start_int,
+                "endIndex": max(cycle_start_int, cycle_end_int),
+                "cluster": str(row["__cluster__"]).strip(),
+            }
+        )
+
+    payload = {
+        "fileId": file_id,
+        "workspaceKind": workspace_kind,
+        "fileRole": file_role,
+        "rowCount": row_count,
+        "startIndex": requested_start,
+        "endIndex": requested_end,
         "cycles": cycles,
     }
     _plot_cache.set(cache_key, payload)
