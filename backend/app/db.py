@@ -76,7 +76,7 @@ def init_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS auth_settings (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
-                access_mode TEXT NOT NULL DEFAULT 'open',
+                access_mode TEXT NOT NULL DEFAULT 'code',
                 admin_username TEXT,
                 admin_password_hash TEXT,
                 admin_password_updated_at TEXT
@@ -86,7 +86,7 @@ def init_db() -> None:
         connection.execute(
             """
             INSERT INTO auth_settings (id, access_mode)
-            VALUES (1, 'open')
+            VALUES (1, 'code')
             ON CONFLICT(id) DO NOTHING
             """
         )

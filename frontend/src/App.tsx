@@ -1,4 +1,13 @@
-import { type ChangeEvent, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent
+} from "react";
 import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 
@@ -6,10 +15,12 @@ type SplitMode = 1 | 2 | 4;
 type PanelId = 1 | 2 | 3 | 4;
 type HealthStatus = "checking" | "connected" | "failed";
 type PlotMode = "overview" | "range";
-type FileRole = "data" | "parameter" | "unsupervised";
+type FileRole = "data" | "parameter" | "unsupervised" | "wave";
 type EcgMarkerMode = "major" | "point";
 type SeriesKey =
   | "amplitude"
+  | "s1Area"
+  | "s2Area"
   | "s1Start"
   | "s1End"
   | "s2Start"
@@ -22,9 +33,12 @@ type SeriesKey =
   | "pointPs";
 type AccessMode = "open" | "code";
 type WorkspaceKind = "heartsound" | "ecg";
+type PanelLinkedFileRole = Extract<FileRole, "parameter" | "unsupervised">;
 
 interface VisibleSeries {
   amplitude: boolean;
+  s1Area: boolean;
+  s2Area: boolean;
   s1Start: boolean;
   s1End: boolean;
   s2Start: boolean;
@@ -35,6 +49,14 @@ interface VisibleSeries {
   majorQrse: boolean;
   majorTs: boolean;
   pointPs: boolean;
+}
+
+interface SeriesDescriptor {
+  key: SeriesKey;
+  label: string;
+  color: string;
+  fillColor?: string;
+  borderColor?: string;
 }
 
 interface PanelStyleOptions {
@@ -71,6 +93,7 @@ interface UploadedFileMetadata {
   relativePath: string | null;
   workspaceKind: WorkspaceKind;
   fileRole: FileRole;
+  extension: string;
   uploadedAt: string;
   rowCount: number;
   fileSizeBytes: number;
@@ -223,14 +246,27 @@ interface PanelCardProps {
   onSearchInputChange: (value: string) => void;
   isActive: boolean;
   onActivate: (panelId: PanelId) => void;
-  onToggleSeries: (panelId: PanelId, key: SeriesKey) => void;
   onToggleParameterSummary: (panelId: PanelId) => void;
   onToggleSelectedCycleHighlight: (panelId: PanelId) => void;
   onToggleUnsupervisedOverlay: (panelId: PanelId) => void;
+  onOpenSeriesPicker: (panelId: PanelId) => void;
+  onResetDisplayDefaults: (panelId: PanelId) => void;
   onOpenSettings: (panelId: PanelId) => void;
   onResetPanel: (panelId: PanelId) => void;
   onSliderRangeCommit: (panelId: PanelId, start: number, end: number) => void;
   onSelectCycle: (panelId: PanelId, cycleIndex: number) => void;
+}
+
+type DataPair = [number, number];
+
+interface HeartsoundRegionOverlay {
+  label: "S1" | "S2";
+  startPeak: DataPair;
+  endPeak: DataPair;
+  areaStart: number;
+  areaEnd: number;
+  fillColor: string;
+  borderColor: string;
 }
 
 const PANEL_IDS_BY_MODE: Record<SplitMode, PanelId[]> = {
@@ -241,8 +277,22 @@ const PANEL_IDS_BY_MODE: Record<SplitMode, PanelId[]> = {
 
 const SPLIT_BUTTONS: SplitMode[] = [1, 2];
 
-const HEARTSOUND_SERIES_ITEMS: Array<{ key: SeriesKey; label: string; color: string }> = [
+const HEARTSOUND_SERIES_ITEMS: SeriesDescriptor[] = [
   { key: "amplitude", label: "Amplitude", color: "#79c0ff" },
+  {
+    key: "s1Area",
+    label: "S1 Area",
+    color: "rgba(46, 160, 67, 0.42)",
+    fillColor: "rgba(46, 160, 67, 0.14)",
+    borderColor: "rgba(46, 160, 67, 0.42)"
+  },
+  {
+    key: "s2Area",
+    label: "S2 Area",
+    color: "rgba(248, 81, 73, 0.38)",
+    fillColor: "rgba(248, 81, 73, 0.13)",
+    borderColor: "rgba(248, 81, 73, 0.38)"
+  },
   { key: "s1Start", label: "S1-Start_RS_Score", color: "#2ea043" },
   { key: "s1End", label: "S1-End_RS_Score", color: "#d29922" },
   { key: "s2Start", label: "S2-Start_RS_Score", color: "#db6d28" },
@@ -263,7 +313,7 @@ const ECG_SERIES_COLORS = {
   pointTs: "#1de9b6"
 } as const;
 
-const ECG_SERIES_ITEMS_BY_MODE: Record<EcgMarkerMode, Array<{ key: SeriesKey; label: string; color: string }>> = {
+const ECG_SERIES_ITEMS_BY_MODE: Record<EcgMarkerMode, SeriesDescriptor[]> = {
   major: [
     { key: "amplitude", label: "raw", color: ECG_SERIES_COLORS.amplitude },
     { key: "majorPs", label: "major_ps", color: ECG_SERIES_COLORS.majorPs },
@@ -284,16 +334,18 @@ const ECG_SERIES_ITEMS_BY_MODE: Record<EcgMarkerMode, Array<{ key: SeriesKey; la
 
 const DEFAULT_VISIBLE_SERIES: VisibleSeries = {
   amplitude: true,
-  s1Start: true,
-  s1End: true,
-  s2Start: true,
-  s2End: true,
-  majorPs: true,
-  majorPe: true,
-  majorQrss: true,
-  majorQrse: true,
-  majorTs: true,
-  pointPs: true
+  s1Area: true,
+  s2Area: true,
+  s1Start: false,
+  s1End: false,
+  s2Start: false,
+  s2End: false,
+  majorPs: false,
+  majorPe: false,
+  majorQrss: false,
+  majorQrse: false,
+  majorTs: false,
+  pointPs: false
 };
 
 const DEFAULT_STYLE_OPTIONS: PanelStyleOptions = {
@@ -305,6 +357,7 @@ const DEFAULT_STYLE_OPTIONS: PanelStyleOptions = {
 
 const FILE_ROLE_TABS: Array<{ key: FileRole; label: string }> = [
   { key: "data", label: "Data" },
+  { key: "wave", label: "Wave" },
   { key: "parameter", label: "Parameter" },
   { key: "unsupervised", label: "Unsupervised" }
 ];
@@ -375,12 +428,16 @@ const HEARTSOUND_INITIAL_RANGE_SIZE = 30000;
 const ECG_INITIAL_RANGE_SIZE = 1000;
 const RS_SCORE_AXIS_MIN = 0;
 const HEARTSOUND_SECONDARY_AXIS_MAX = 100;
+const HEARTSOUND_REGION_THRESHOLD = 15;
 const ECG_SECONDARY_AXIS_MAX = 30;
 const ECG_POINT_SECONDARY_AXIS_MAX = 1;
 const HEARTSOUND_RS_BAR_WIDTH = 0.9;
 const ECG_BAR_WIDTH = 1.8;
 const RAW_SERIES_Z = 1;
 const BAR_SERIES_Z = 3;
+const PANEL_SPLIT_HANDLE_HEIGHT = 10;
+const MIN_CHART_SECTION_HEIGHT = 220;
+const MIN_PARAMETER_SECTION_HEIGHT = 160;
 const QUICK_RANGE_SHIFT_STEP = 30000;
 const ECG_RANGE_SHIFT_STEP = 200;
 const KEYBOARD_RANGE_SHIFT_STEP = 3000;
@@ -448,7 +505,111 @@ const createAppState = (): AppState => ({
 const clampNumber = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 const toDataPairs = (xValues: number[], yValues: number[]) =>
-  xValues.map((x, index) => [x, yValues[index] ?? 0] as [number, number]);
+  xValues.map((x, index) => [x, yValues[index] ?? 0] as DataPair);
+
+const extractSegmentPeaks = (pairs: DataPair[], threshold: number): DataPair[] => {
+  const peaks: DataPair[] = [];
+  let bestPair: DataPair | null = null;
+  let activeLength = 0;
+
+  for (const pair of pairs) {
+    if (!Number.isFinite(pair[1]) || pair[1] < threshold) {
+      if (bestPair && activeLength > 0) {
+        peaks.push(bestPair);
+      }
+      bestPair = null;
+      activeLength = 0;
+      continue;
+    }
+
+    activeLength += 1;
+    if (bestPair === null || pair[1] > bestPair[1]) {
+      bestPair = pair;
+    }
+  }
+
+  if (bestPair && activeLength > 0) {
+    peaks.push(bestPair);
+  }
+
+  return peaks;
+};
+
+const estimatePeakSpacing = (peaks: DataPair[]): number | null => {
+  if (peaks.length < 2) {
+    return null;
+  }
+
+  const spacings = peaks
+    .slice(1)
+    .map((peak, index) => peak[0] - peaks[index][0])
+    .filter((spacing) => Number.isFinite(spacing) && spacing > 0)
+    .sort((left, right) => left - right);
+
+  if (spacings.length === 0) {
+    return null;
+  }
+
+  return spacings[Math.floor(spacings.length / 2)] ?? null;
+};
+
+const buildHeartsoundRegionOverlays = (
+  label: "S1" | "S2",
+  startPairs: DataPair[],
+  endPairs: DataPair[],
+  fillColor: string,
+  borderColor: string
+): HeartsoundRegionOverlay[] => {
+  const startPeaks = extractSegmentPeaks(startPairs, HEARTSOUND_REGION_THRESHOLD);
+  const endPeaks = extractSegmentPeaks(endPairs, HEARTSOUND_REGION_THRESHOLD);
+  if (startPeaks.length === 0 || endPeaks.length === 0) {
+    return [];
+  }
+
+  const cycleSpacing =
+    estimatePeakSpacing(startPeaks) ??
+    estimatePeakSpacing(endPeaks) ??
+    4000;
+  const maxRegionWidth = Math.max(1, Math.floor(cycleSpacing * 0.45));
+
+  const overlays: HeartsoundRegionOverlay[] = [];
+  let endPeakIndex = 0;
+
+  for (let index = 0; index < startPeaks.length; index += 1) {
+    const startPeak = startPeaks[index];
+    const nextStartX = startPeaks[index + 1]?.[0] ?? Number.POSITIVE_INFINITY;
+
+    while (endPeakIndex < endPeaks.length && endPeaks[endPeakIndex][0] <= startPeak[0]) {
+      endPeakIndex += 1;
+    }
+
+    const endPeak = endPeaks[endPeakIndex];
+    if (!endPeak) {
+      break;
+    }
+    if (endPeak[0] >= nextStartX) {
+      continue;
+    }
+
+    const regionWidth = endPeak[0] - startPeak[0];
+    if (regionWidth <= 0 || regionWidth > maxRegionWidth) {
+      continue;
+    }
+
+    overlays.push({
+      label,
+      startPeak,
+      endPeak,
+      areaStart: startPeak[0],
+      areaEnd: endPeak[0],
+      fillColor,
+      borderColor
+    });
+    endPeakIndex += 1;
+  }
+
+  return overlays;
+};
 
 const parseNumericInput = (value: string): number | null => {
   const parsed = Number(value);
@@ -552,6 +713,9 @@ const getFileRoleEmptyLabel = (workspace: WorkspaceKind, fileRole: FileRole): st
       ? "No uploaded ECG unsupervised files"
       : "No uploaded HeartSound unsupervised files";
   }
+  if (fileRole === "wave") {
+    return workspace === "ecg" ? "No uploaded ECG wave files" : "No uploaded HeartSound wave files";
+  }
   return WORKSPACE_TABS.find((item) => item.key === workspace)?.emptyLabel ?? "No files";
 };
 
@@ -561,6 +725,9 @@ const getFileRoleLabel = (fileRole: FileRole): string => {
   }
   if (fileRole === "unsupervised") {
     return "Unsupervised";
+  }
+  if (fileRole === "wave") {
+    return "Wave";
   }
   return "Data";
 };
@@ -579,7 +746,40 @@ const getFileRoleListSubtitle = (fileRole: FileRole, panelId: PanelId): string =
   if (fileRole === "parameter") {
     return `Click file to link as parameter to Panel ${panelId}`;
   }
+  if (fileRole === "wave") {
+    return "Uploaded wave files will appear here";
+  }
   return `Click file to link as unsupervised to Panel ${panelId}`;
+};
+
+const getFileAcceptValue = (fileRole: FileRole): string => {
+  if (fileRole === "wave") {
+    return ".wav";
+  }
+  return ".csv,.xlsx";
+};
+
+const getFileMetaText = (file: UploadedFileMetadata): string => {
+  if (file.fileRole === "wave") {
+    return file.extension ? file.extension.replace(".", "").toUpperCase() : "WAV";
+  }
+  return `rows ${file.rowCount}`;
+};
+
+const isPanelLinkedFileRole = (fileRole: FileRole): fileRole is PanelLinkedFileRole =>
+  fileRole === "parameter" || fileRole === "unsupervised";
+
+const getLinkedFileIdForPanelRole = (panel: PanelState, fileRole: FileRole): string | null => {
+  if (fileRole === "data") {
+    return panel.fileId;
+  }
+  if (fileRole === "parameter") {
+    return panel.parameterFileId;
+  }
+  if (fileRole === "unsupervised") {
+    return panel.unsupervisedFileId;
+  }
+  return null;
 };
 
 const extractAutoSyncKey = (fileName: string, workspaceKind: WorkspaceKind): string | null => {
@@ -710,6 +910,25 @@ function AccessKeyIcon() {
   );
 }
 
+function ParameterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" shapeRendering="geometricPrecision">
+      <path
+        d="M6.5 5.5v13M12 5.5v13M17.5 5.5v13"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        vectorEffect="non-scaling-stroke"
+      />
+      <circle cx="6.5" cy="8.5" r="2.1" fill="currentColor" />
+      <circle cx="12" cy="14.5" r="2.1" fill="currentColor" />
+      <circle cx="17.5" cy="8" r="2.1" fill="currentColor" />
+    </svg>
+  );
+}
+
 const PanelCard = memo(function PanelCard({
   workspaceKind,
   panel,
@@ -722,10 +941,11 @@ const PanelCard = memo(function PanelCard({
   onSearchInputChange,
   isActive,
   onActivate,
-  onToggleSeries,
   onToggleParameterSummary,
   onToggleSelectedCycleHighlight,
   onToggleUnsupervisedOverlay,
+  onOpenSeriesPicker,
+  onResetDisplayDefaults,
   onOpenSettings,
   onResetPanel,
   onSliderRangeCommit,
@@ -780,6 +1000,74 @@ const PanelCard = memo(function PanelCard({
     );
   }, [parameterState.selectedCycleIndex, parameterSummary]);
   const displayedParameterGroups = selectedCycle?.groups ?? parameterSummary?.groups ?? [];
+  const [parameterSplitRatio, setParameterSplitRatio] = useState<number>(0.5);
+  const [isSplitDragging, setIsSplitDragging] = useState<boolean>(false);
+  const panelWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const updateParameterSplitRatio = useCallback((clientY: number) => {
+    const wrapper = panelWrapperRef.current;
+    if (!wrapper) {
+      return;
+    }
+
+    const rect = wrapper.getBoundingClientRect();
+    const availableHeight = rect.height - PANEL_SPLIT_HANDLE_HEIGHT;
+    if (availableHeight <= MIN_CHART_SECTION_HEIGHT + MIN_PARAMETER_SECTION_HEIGHT) {
+      return;
+    }
+
+    const nextRatio = (clientY - rect.top - PANEL_SPLIT_HANDLE_HEIGHT / 2) / availableHeight;
+    const minRatio = MIN_CHART_SECTION_HEIGHT / availableHeight;
+    const maxRatio = 1 - MIN_PARAMETER_SECTION_HEIGHT / availableHeight;
+    setParameterSplitRatio(clampNumber(nextRatio, minRatio, maxRatio));
+  }, []);
+
+  const onSplitHandlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsSplitDragging(true);
+      updateParameterSplitRatio(event.clientY);
+    },
+    [updateParameterSplitRatio]
+  );
+
+  useEffect(() => {
+    if (!isSplitDragging) {
+      return undefined;
+    }
+
+    const onPointerMove = (event: PointerEvent) => {
+      updateParameterSplitRatio(event.clientY);
+    };
+
+    const stopDragging = () => {
+      setIsSplitDragging(false);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", stopDragging);
+    window.addEventListener("pointercancel", stopDragging);
+
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", stopDragging);
+      window.removeEventListener("pointercancel", stopDragging);
+    };
+  }, [isSplitDragging, updateParameterSplitRatio]);
+
+  const chartSectionStyle = showParameterSection
+    ? {
+        flex: `${parameterSplitRatio} 1 0`,
+        minHeight: `${MIN_CHART_SECTION_HEIGHT}px`
+      }
+    : undefined;
+  const parameterSectionStyle = showParameterSection
+    ? {
+        flex: `${1 - parameterSplitRatio} 1 0`,
+        minHeight: `${MIN_PARAMETER_SECTION_HEIGHT}px`
+      }
+    : undefined;
 
   const chartOption = useMemo<EChartsOption | null>(() => {
     if (!panel.fileId || !activePlot) {
@@ -806,6 +1094,26 @@ const PanelCard = memo(function PanelCard({
     const pointQrssPairs = toDataPairs(activePlot.x, activePlot.pointQrss);
     const pointQrsePairs = toDataPairs(activePlot.x, activePlot.pointQrse);
     const pointTsPairs = toDataPairs(activePlot.x, activePlot.pointTs);
+    const s1RegionOverlays =
+      workspaceKind === "heartsound" && panel.visibleSeries.s1Area
+        ? buildHeartsoundRegionOverlays(
+            "S1",
+            s1StartPairs,
+            s1EndPairs,
+            "rgba(46, 160, 67, 0.14)",
+            "rgba(46, 160, 67, 0.42)"
+          )
+        : [];
+    const s2RegionOverlays =
+      workspaceKind === "heartsound" && panel.visibleSeries.s2Area
+        ? buildHeartsoundRegionOverlays(
+            "S2",
+            s2StartPairs,
+            s2EndPairs,
+            "rgba(248, 81, 73, 0.13)",
+            "rgba(248, 81, 73, 0.38)"
+          )
+        : [];
     const overviewPairs = overviewPlot
       ? toDataPairs(overviewPlot.x, overviewPlot.amplitude)
       : amplitudePairs;
@@ -818,6 +1126,17 @@ const PanelCard = memo(function PanelCard({
           ? ECG_POINT_SECONDARY_AXIS_MAX
           : ECG_SECONDARY_AXIS_MAX
         : HEARTSOUND_SECONDARY_AXIS_MAX;
+    const showSecondaryAxis =
+      workspaceKind === "heartsound"
+        ? panel.visibleSeries.s1Start ||
+          panel.visibleSeries.s1End ||
+          panel.visibleSeries.s2Start ||
+          panel.visibleSeries.s2End
+        : panel.visibleSeries.majorPs ||
+          panel.visibleSeries.majorPe ||
+          panel.visibleSeries.majorQrss ||
+          panel.visibleSeries.majorQrse ||
+          panel.visibleSeries.majorTs;
     const barWidth = workspaceKind === "heartsound" ? HEARTSOUND_RS_BAR_WIDTH : ECG_BAR_WIDTH;
 
     const mainSeries: NonNullable<EChartsOption["series"]> = [];
@@ -885,6 +1204,34 @@ const PanelCard = memo(function PanelCard({
             borderColor: "rgba(255, 166, 87, 0.62)"
           },
           data: [[{ xAxis: selectedCycle.startIndex }, { xAxis: selectedCycle.endIndex }]]
+        }
+      });
+    }
+    for (const regionOverlay of [...s1RegionOverlays, ...s2RegionOverlays]) {
+      mainSeries.push({
+        name: `${regionOverlay.label} Region`,
+        type: "line",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        z: 0,
+        silent: true,
+        showSymbol: false,
+        animation: false,
+        lineStyle: { opacity: 0 },
+        itemStyle: { opacity: 0 },
+        tooltip: { show: false },
+        data: [],
+        markArea: {
+          silent: true,
+          label: { show: false },
+          itemStyle: {
+            color: regionOverlay.fillColor,
+            borderColor: regionOverlay.borderColor
+          },
+          data: [[
+            { name: regionOverlay.label, xAxis: regionOverlay.areaStart },
+            { xAxis: regionOverlay.areaEnd }
+          ]]
         }
       });
     }
@@ -1230,6 +1577,7 @@ const PanelCard = memo(function PanelCard({
           min: RS_SCORE_AXIS_MIN,
           max: secondaryAxisMax,
           scale: panel.styleOptions.yAxisAutoScale,
+          show: showSecondaryAxis,
           axisLine: {
             lineStyle: { color: "#30363d" }
           },
@@ -1277,6 +1625,17 @@ const PanelCard = memo(function PanelCard({
       series: mainSeries
     };
   }, [activePlot, overviewPlot, panel, searchMarkerIndex, selectedCycle, unsupervisedSummary, workspaceKind]);
+
+  const chartLegendItems = useMemo(() => {
+    const seriesItems =
+      workspaceKind === "heartsound"
+        ? HEARTSOUND_SERIES_ITEMS
+        : ECG_SERIES_ITEMS_BY_MODE[panel.styleOptions.ecgMarkerMode];
+
+    return seriesItems.filter(
+      (seriesItem) => seriesItem.key !== "amplitude" && panel.visibleSeries[seriesItem.key]
+    );
+  }, [panel.styleOptions.ecgMarkerMode, panel.visibleSeries, workspaceKind]);
 
   const onDataZoom = useCallback(
     (event: {
@@ -1381,25 +1740,34 @@ const PanelCard = memo(function PanelCard({
         </div>
 
         <div className="panel-actions" onClick={(event) => event.stopPropagation()}>
-          <div className="series-group">
-            {getSeriesItemsForWorkspace(workspaceKind, panel.styleOptions.ecgMarkerMode).map((series) => (
-              <label key={series.key} className="series-toggle">
-                <input
-                  type="checkbox"
-                  checked={panel.visibleSeries[series.key]}
-                  onChange={() => onToggleSeries(panel.panelId, series.key)}
-                />
-                <span style={{ color: series.color }}>{series.label}</span>
-              </label>
-            ))}
-          </div>
-          <label className="panel-parameter-toggle">
+          <button
+            type="button"
+            className="panel-action-button"
+            onClick={() => onResetDisplayDefaults(panel.panelId)}
+          >
+            Default
+          </button>
+          <button
+            type="button"
+            className="panel-action-button panel-action-button-danger"
+            onClick={() => onOpenSeriesPicker(panel.panelId)}
+          >
+            Detail
+          </button>
+          <label
+            className={`panel-parameter-toggle${panel.showParameterSummary ? " is-active" : ""}`}
+            title="Toggle parameter panel"
+            aria-label="Toggle parameter panel"
+          >
             <input
+              className="panel-parameter-toggle-input"
               type="checkbox"
               checked={panel.showParameterSummary}
               onChange={() => onToggleParameterSummary(panel.panelId)}
             />
-            <span>Parameter</span>
+            <span className="panel-parameter-toggle-label">
+              <ParameterIcon />
+            </span>
           </label>
           <button
             type="button"
@@ -1439,11 +1807,12 @@ const PanelCard = memo(function PanelCard({
           <div className="empty-state">Loading chart data...</div>
         ) : (
           <div
+            ref={panelWrapperRef}
             className={
               showParameterSection ? "panel-chart-wrapper dual-panel" : "panel-chart-wrapper"
             }
           >
-            <div className="panel-chart-section">
+            <div className="panel-chart-section" style={chartSectionStyle}>
               <div className="panel-chart-host">
                 <ReactECharts
                   option={chartOption}
@@ -1452,6 +1821,31 @@ const PanelCard = memo(function PanelCard({
                   notMerge
                   lazyUpdate
                 />
+                {chartLegendItems.length > 0 ? (
+                  <div className="panel-chart-legend" aria-label="Visible chart series">
+                    {chartLegendItems.map((seriesItem) => (
+                      <div key={seriesItem.key} className="panel-chart-legend-item">
+                        <span
+                          className={
+                            seriesItem.fillColor
+                              ? "panel-chart-legend-swatch area"
+                              : "panel-chart-legend-swatch"
+                          }
+                          style={{
+                            background: seriesItem.fillColor ?? seriesItem.color,
+                            borderColor: seriesItem.borderColor ?? seriesItem.color
+                          }}
+                        />
+                        <span
+                          className="panel-chart-legend-label"
+                          style={{ color: seriesItem.color }}
+                        >
+                          {seriesItem.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {plotState.loading ? <div className="panel-chart-overlay">Loading...</div> : null}
               </div>
               <div className="panel-range-info">
@@ -1476,27 +1870,59 @@ const PanelCard = memo(function PanelCard({
               {plotState.error ? <div className="panel-chart-error">{plotState.error}</div> : null}
             </div>
             {showParameterSection ? (
-              <div className="panel-parameter-section">
+              <button
+                type="button"
+                className={isSplitDragging ? "panel-split-handle dragging" : "panel-split-handle"}
+                aria-label={`Resize chart and parameter sections for panel ${panel.panelId}`}
+                title="Drag to resize"
+                onPointerDown={onSplitHandlePointerDown}
+                onClick={(event) => event.preventDefault()}
+              >
+                <span className="panel-split-handle-bar" />
+              </button>
+            ) : null}
+            {showParameterSection ? (
+              <div className="panel-parameter-section" style={parameterSectionStyle}>
                 {panel.parameterFileId ? (
                   <div className="parameter-summary-shell">
                     <div className="parameter-summary-header">
                       <div className="parameter-summary-title">Linked parameter window</div>
                       <div className="parameter-summary-header-actions">
-                        <label className="panel-parameter-toggle parameter-highlight-toggle">
+                        <label
+                          className={`panel-parameter-toggle parameter-highlight-toggle${
+                            panel.showSelectedCycleHighlight ? " is-active" : ""
+                          }`}
+                        >
                           <input
+                            className="parameter-highlight-toggle-input"
                             type="checkbox"
                             checked={panel.showSelectedCycleHighlight}
                             onChange={() => onToggleSelectedCycleHighlight(panel.panelId)}
                           />
-                          <span>Cycle</span>
+                          <span className="parameter-highlight-toggle-label">
+                            <span className="parameter-highlight-toggle-box" aria-hidden="true">
+                              <span className="parameter-highlight-toggle-check" />
+                            </span>
+                            <span>Cycle</span>
+                          </span>
                         </label>
-                        <label className="panel-parameter-toggle parameter-highlight-toggle">
+                        <label
+                          className={`panel-parameter-toggle parameter-highlight-toggle${
+                            panel.showUnsupervisedOverlay ? " is-active" : ""
+                          }`}
+                        >
                           <input
+                            className="parameter-highlight-toggle-input"
                             type="checkbox"
                             checked={panel.showUnsupervisedOverlay}
                             onChange={() => onToggleUnsupervisedOverlay(panel.panelId)}
                           />
-                          <span>Unsupervised</span>
+                          <span className="parameter-highlight-toggle-label">
+                            <span className="parameter-highlight-toggle-box" aria-hidden="true">
+                              <span className="parameter-highlight-toggle-check" />
+                            </span>
+                            <span>Unsupervised</span>
+                          </span>
                         </label>
                         <div className="parameter-summary-range">
                           rows {formatRowNumber(panel.rangeStart)} - {formatRowNumber(panel.rangeEnd)}
@@ -1615,6 +2041,7 @@ function App() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState<boolean>(false);
   const [settingsPanelId, setSettingsPanelId] = useState<PanelId | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft | null>(null);
+  const [seriesPanelId, setSeriesPanelId] = useState<PanelId | null>(null);
 
   const requestSeqRef = useRef<Record<PanelId, number>>({ 1: 0, 2: 0, 3: 0, 4: 0 });
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1641,6 +2068,8 @@ function App() {
   const activeWorkspace = activePanel.workspaceKind;
   const settingsPanel =
     settingsPanelId !== null ? panels.find((panel) => panel.panelId === settingsPanelId) ?? null : null;
+  const seriesPanel =
+    seriesPanelId !== null ? panels.find((panel) => panel.panelId === seriesPanelId) ?? null : null;
   const settingsTargetWorkspace = settingsPanel?.workspaceKind ?? activeWorkspace;
   const settingsRangeShiftStep = getRangeShiftStep(settingsTargetWorkspace);
   const files = filesByWorkspace[activeWorkspace];
@@ -2417,7 +2846,7 @@ function App() {
   );
 
   const assignSupportFileToActivePanel = useCallback(
-    (file: UploadedFileMetadata, fileRole: Extract<FileRole, "parameter" | "unsupervised">) => {
+    (file: UploadedFileMetadata, fileRole: PanelLinkedFileRole) => {
       updatePanelState(activePanelId, (panel) => ({
         ...panel,
         parameterFileId: fileRole === "parameter" ? file.fileId : panel.parameterFileId,
@@ -2536,6 +2965,17 @@ function App() {
     [updatePanelState]
   );
 
+  const resetPanelDisplayDefaults = useCallback(
+    (panelId: PanelId) => {
+      updatePanelState(panelId, (panel) => ({
+        ...panel,
+        visibleSeries: { ...DEFAULT_VISIBLE_SERIES },
+        showParameterSummary: true
+      }));
+    },
+    [updatePanelState]
+  );
+
   const togglePanelSelectedCycleHighlight = useCallback(
     (panelId: PanelId) => {
       updatePanelState(panelId, (panel) => ({
@@ -2579,6 +3019,14 @@ function App() {
   const closeSettingsModal = useCallback(() => {
     setSettingsPanelId(null);
     setSettingsDraft(null);
+  }, []);
+
+  const openSeriesPickerForPanel = useCallback((panelId: PanelId) => {
+    setSeriesPanelId(panelId);
+  }, []);
+
+  const closeSeriesPicker = useCallback(() => {
+    setSeriesPanelId(null);
   }, []);
 
   const updateSettingsRange = useCallback(
@@ -3115,7 +3563,7 @@ function App() {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".csv,.xlsx"
+              accept={getFileAcceptValue(activeFileRole)}
               multiple
               className="hidden-input"
               onChange={handleUploadInputChange}
@@ -3159,27 +3607,23 @@ function App() {
                       key={file.fileId}
                       type="button"
                       className={
-                        (
-                          activeFileRole === "data"
-                            ? file.fileId === activePanel.fileId
-                            : activeFileRole === "parameter"
-                              ? file.fileId === activePanel.parameterFileId
-                              : file.fileId === activePanel.unsupervisedFileId
-                        )
+                        (file.fileId === getLinkedFileIdForPanelRole(activePanel, activeFileRole))
                           ? "file-item active-target"
                           : "file-item"
                       }
                       onClick={() =>
                         activeFileRole === "data"
                           ? assignDataFileToActivePanel(file)
-                          : assignSupportFileToActivePanel(file, activeFileRole)
+                          : isPanelLinkedFileRole(activeFileRole)
+                            ? assignSupportFileToActivePanel(file, activeFileRole)
+                            : undefined
                       }
                     >
                       <div className="file-item-name">{file.originalName}</div>
                       {file.relativePath ? <div className="file-item-path">{file.relativePath}</div> : null}
                       <div className="file-item-meta">
                         <span>{formatTimestamp(file.uploadedAt)}</span>
-                        <span>rows {file.rowCount}</span>
+                        <span>{getFileMetaText(file)}</span>
                       </div>
                     </button>
                   ))
@@ -3189,7 +3633,7 @@ function App() {
 
             <button
               type="button"
-              className="danger-button"
+              className="danger-button sidebar-delete-button"
               disabled={filteredFiles.length === 0}
               onClick={() => {
                 updateAppState((previous) => ({
@@ -3201,6 +3645,8 @@ function App() {
             >
               Delete Files
             </button>
+
+            <div className="sidebar-future-space" aria-hidden="true" />
             {statusMessage ? <div className="status-message">{statusMessage}</div> : null}
           </aside>
 
@@ -3284,10 +3730,11 @@ function App() {
                         activePanelId: nextPanelId
                       }))
                     }
-                    onToggleSeries={togglePanelSeries}
                     onToggleParameterSummary={togglePanelParameterSummary}
                     onToggleSelectedCycleHighlight={togglePanelSelectedCycleHighlight}
                     onToggleUnsupervisedOverlay={togglePanelUnsupervisedOverlay}
+                    onOpenSeriesPicker={openSeriesPickerForPanel}
+                    onResetDisplayDefaults={resetPanelDisplayDefaults}
                     onOpenSettings={openSettingsForPanel}
                     onResetPanel={resetPanel}
                     onSliderRangeCommit={applyPanelRange}
@@ -3461,6 +3908,42 @@ function App() {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {!isAccessLocked && seriesPanel ? (
+        <div className="modal-overlay" role="presentation" onClick={closeSeriesPicker}>
+          <div
+            className="modal-card series-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Series selection modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-title">Panel {seriesPanel.panelId} Series</div>
+            <div className="modal-body">
+              <div className="series-modal-grid">
+                {getSeriesItemsForWorkspace(
+                  seriesPanel.workspaceKind,
+                  seriesPanel.styleOptions.ecgMarkerMode
+                ).map((series) => (
+                  <label key={series.key} className="series-modal-item">
+                    <input
+                      type="checkbox"
+                      checked={seriesPanel.visibleSeries[series.key]}
+                      onChange={() => togglePanelSeries(seriesPanel.panelId, series.key)}
+                    />
+                    <span style={{ color: series.color }}>{series.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="split-button" onClick={closeSeriesPicker}>
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

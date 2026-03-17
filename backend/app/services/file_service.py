@@ -12,9 +12,16 @@ from fastapi import UploadFile
 from app.config import UPLOAD_DIR
 from app.db import db_connection
 
-SUPPORTED_EXTENSIONS = {".csv", ".xlsx"}
+TABULAR_EXTENSIONS = {".csv", ".xlsx"}
+WAVE_EXTENSIONS = {".wav"}
+SUPPORTED_EXTENSIONS_BY_ROLE = {
+    "data": TABULAR_EXTENSIONS,
+    "parameter": TABULAR_EXTENSIONS,
+    "unsupervised": TABULAR_EXTENSIONS,
+    "wave": WAVE_EXTENSIONS,
+}
 WORKSPACE_KINDS = {"heartsound", "ecg"}
-FILE_ROLES = {"data", "parameter", "unsupervised"}
+FILE_ROLES = {"data", "parameter", "unsupervised", "wave"}
 HEARTSOUND_REQUIRED_COLUMNS = [
     "Time_Index",
     "Amplitude",
@@ -236,7 +243,7 @@ def list_files(
     if workspace_kind is not None and workspace_kind not in WORKSPACE_KINDS:
         raise UploadValidationError("workspace kind must be 'heartsound' or 'ecg'")
     if file_role is not None and file_role not in FILE_ROLES:
-        raise UploadValidationError("file role must be 'data', 'parameter', or 'unsupervised'")
+        raise UploadValidationError("file role must be 'data', 'parameter', 'unsupervised', or 'wave'")
 
     with db_connection() as connection:
         if workspace_kind is None and file_role is None:
@@ -342,27 +349,31 @@ async def save_uploaded_file(
     if workspace_kind not in WORKSPACE_KINDS:
         raise UploadValidationError("workspace kind must be 'heartsound' or 'ecg'")
     if file_role not in FILE_ROLES:
-        raise UploadValidationError("file role must be 'data', 'parameter', or 'unsupervised'")
+        raise UploadValidationError("file role must be 'data', 'parameter', 'unsupervised', or 'wave'")
 
     original_name = upload_file.filename or "unknown"
     extension = Path(original_name).suffix.lower()
-
-    if extension not in SUPPORTED_EXTENSIONS:
+    supported_extensions = SUPPORTED_EXTENSIONS_BY_ROLE[file_role]
+    if extension not in supported_extensions:
+        allowed_text = "/".join(sorted(ext.lstrip(".") for ext in supported_extensions))
         raise UploadValidationError(
-            f"unsupported file extension '{extension or '(none)'}'. only csv/xlsx allowed"
+            f"unsupported file extension '{extension or '(none)'}'. only {allowed_text} allowed"
         )
 
     file_bytes = await upload_file.read()
     if not file_bytes:
         raise UploadValidationError("file is empty")
 
-    try:
-        dataframe = _read_dataframe(file_bytes, extension)
-        _validate_dataframe(dataframe, workspace_kind, file_role)
-    except UploadValidationError:
-        raise
-    except Exception as error:
-        raise UploadValidationError(f"failed to parse '{original_name}'") from error
+    row_count = 0
+    if file_role != "wave":
+        try:
+            dataframe = _read_dataframe(file_bytes, extension)
+            _validate_dataframe(dataframe, workspace_kind, file_role)
+            row_count = int(len(dataframe.index))
+        except UploadValidationError:
+            raise
+        except Exception as error:
+            raise UploadValidationError(f"failed to parse '{original_name}'") from error
 
     file_id = str(uuid4())
     stored_name = f"{file_id}{extension}"
@@ -376,7 +387,7 @@ async def save_uploaded_file(
         "fileRole": file_role,
         "storedName": stored_name,
         "extension": extension,
-        "rowCount": int(len(dataframe.index)),
+        "rowCount": row_count,
         "fileSizeBytes": len(file_bytes),
         "uploadedAt": datetime.now(timezone.utc).isoformat(),
     }
