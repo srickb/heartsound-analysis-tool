@@ -326,6 +326,7 @@ def _build_plot_payload(
     target_points: int,
     mode: str,
     workspace_kind: str,
+    full_resolution: bool,
 ) -> dict[str, Any]:
     segment = dataframe.iloc[start_index : end_index + 1]
     if workspace_kind == "heartsound":
@@ -336,7 +337,9 @@ def _build_plot_payload(
         s2_end = segment["S2-End_RS_Score"].to_numpy()
 
         point_count = len(segment.index)
-        should_downsample = mode == "overview" or point_count > min(target_points, RAW_RANGE_LIMIT)
+        should_downsample = not full_resolution and (
+            mode == "overview" or point_count > min(target_points, RAW_RANGE_LIMIT)
+        )
         if should_downsample:
             series, is_downsampled = downsample_minmax_with_bucket_max(
                 start_index,
@@ -392,7 +395,9 @@ def _build_plot_payload(
             "pointTs": segment["point_ts"].to_numpy(),
         }
         point_count = len(segment.index)
-        should_downsample = mode == "overview" or point_count > min(target_points, RAW_RANGE_LIMIT)
+        should_downsample = not full_resolution and (
+            mode == "overview" or point_count > min(target_points, RAW_RANGE_LIMIT)
+        )
         series, is_downsampled = _downsample_generic_series(
             start_index,
             amplitude,
@@ -614,6 +619,7 @@ def get_plot_data(
     end: int | None,
     panel_width: int | None,
     target_points: int | None,
+    full_resolution: bool = False,
 ) -> dict[str, Any]:
     if mode not in {"overview", "range"}:
         raise PlotDataValidationError("mode must be 'overview' or 'range'")
@@ -632,6 +638,7 @@ def get_plot_data(
         resolved_start,
         resolved_end,
         resolved_target_points,
+        full_resolution,
     )
     cached_payload = _plot_cache.get(cache_key)
     if cached_payload is not None:
@@ -654,6 +661,7 @@ def get_plot_data(
         target_points=resolved_target_points,
         mode=mode,
         workspace_kind=workspace_kind,
+        full_resolution=full_resolution,
     )
 
     _plot_cache.set(cache_key, payload)

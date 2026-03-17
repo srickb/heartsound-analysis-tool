@@ -33,7 +33,7 @@ type SeriesKey =
   | "pointPs";
 type AccessMode = "open" | "code";
 type WorkspaceKind = "heartsound" | "ecg";
-type PanelLinkedFileRole = Extract<FileRole, "parameter" | "unsupervised">;
+type PanelLinkedFileRole = Extract<FileRole, "parameter" | "unsupervised" | "wave">;
 
 interface VisibleSeries {
   amplitude: boolean;
@@ -71,6 +71,8 @@ interface PanelState {
   workspaceKind: WorkspaceKind;
   fileId: string | null;
   fileName: string | null;
+  waveFileId: string | null;
+  waveFileName: string | null;
   parameterFileId: string | null;
   parameterFileName: string | null;
   unsupervisedFileId: string | null;
@@ -200,6 +202,16 @@ interface PanelUnsupervisedState {
   error: string | null;
 }
 
+interface PrefetchedRangeEntry {
+  fileId: string;
+  start: number;
+  end: number;
+  payload: PlotDataPayload | null;
+  pending: boolean;
+}
+
+type PrefetchedRangeStore = Partial<Record<PanelId, Record<string, PrefetchedRangeEntry>>>;
+
 interface SettingsDraft {
   rangeStart: string;
   rangeEnd: string;
@@ -229,7 +241,6 @@ interface AppState {
   filesLoadingByWorkspace: Record<WorkspaceKind, boolean>;
   uploadingByWorkspace: Record<WorkspaceKind, boolean>;
   searchText: string;
-  chartSearchIndexText: string;
   statusMessage: string;
   selectedDeleteIds: string[];
 }
@@ -240,10 +251,6 @@ interface PanelCardProps {
   plotState: PanelPlotState;
   parameterState: PanelParameterState;
   unsupervisedState: PanelUnsupervisedState;
-  searchMarkerIndex: number | null;
-  showSearchInput: boolean;
-  searchInputValue: string;
-  onSearchInputChange: (value: string) => void;
   isActive: boolean;
   onActivate: (panelId: PanelId) => void;
   onToggleParameterSummary: (panelId: PanelId) => void;
@@ -253,7 +260,14 @@ interface PanelCardProps {
   onResetDisplayDefaults: (panelId: PanelId) => void;
   onOpenSettings: (panelId: PanelId) => void;
   onResetPanel: (panelId: PanelId) => void;
-  onSliderRangeCommit: (panelId: PanelId, start: number, end: number) => void;
+  onSliderRangeCommit: (
+    panelId: PanelId,
+    start: number,
+    end: number,
+    forceFetch?: boolean,
+    skipLinkedFetch?: boolean
+  ) => void;
+  onPrefetchRange: (panelId: PanelId, start: number, end: number) => void;
   onSelectCycle: (panelId: PanelId, cycleIndex: number) => void;
 }
 
@@ -372,6 +386,8 @@ const createDefaultPanelState = (panelId: PanelId, workspaceKind?: WorkspaceKind
     workspaceKind ?? (panelId === 2 ? "ecg" : "heartsound"),
   fileId: null,
   fileName: null,
+  waveFileId: null,
+  waveFileName: null,
   parameterFileId: null,
   parameterFileName: null,
   unsupervisedFileId: null,
@@ -438,6 +454,10 @@ const BAR_SERIES_Z = 3;
 const PANEL_SPLIT_HANDLE_HEIGHT = 10;
 const MIN_CHART_SECTION_HEIGHT = 220;
 const MIN_PARAMETER_SECTION_HEIGHT = 160;
+const PLAYHEAD_HANDLE_TOP = 21;
+const PLAYHEAD_PIXEL_OFFSET = 0.5;
+const AUTO_ADVANCE_PREFETCH_RATIO = 0.12;
+const AUTO_ADVANCE_PREFETCH_MIN_ROWS = 240;
 const QUICK_RANGE_SHIFT_STEP = 30000;
 const ECG_RANGE_SHIFT_STEP = 200;
 const KEYBOARD_RANGE_SHIFT_STEP = 3000;
@@ -497,7 +517,6 @@ const createAppState = (): AppState => ({
     ecg: false
   },
   searchText: "",
-  chartSearchIndexText: "",
   statusMessage: "",
   selectedDeleteIds: []
 });
@@ -617,6 +636,22 @@ const parseNumericInput = (value: string): number | null => {
     return null;
   }
   return Math.round(parsed);
+};
+
+const isFullResolutionPlotPayload = (
+  payload: PlotDataPayload | null,
+  totalRows: number | null
+): payload is PlotDataPayload => {
+  if (!payload || totalRows === null || totalRows <= 0) {
+    return false;
+  }
+
+  return (
+    !payload.isDownsampled &&
+    payload.startIndex === 0 &&
+    payload.endIndex >= totalRows - 1 &&
+    payload.returnedPointCount >= totalRows
+  );
 };
 
 const getSeriesItemsForWorkspace = (workspaceKind: WorkspaceKind, ecgMarkerMode: EcgMarkerMode) =>
@@ -743,11 +778,11 @@ const getFileRoleListSubtitle = (fileRole: FileRole, panelId: PanelId): string =
   if (fileRole === "data") {
     return `Click file to assign to Panel ${panelId}`;
   }
+  if (fileRole === "wave") {
+    return `Click file to link as wave to Panel ${panelId}`;
+  }
   if (fileRole === "parameter") {
     return `Click file to link as parameter to Panel ${panelId}`;
-  }
-  if (fileRole === "wave") {
-    return "Uploaded wave files will appear here";
   }
   return `Click file to link as unsupervised to Panel ${panelId}`;
 };
@@ -767,11 +802,14 @@ const getFileMetaText = (file: UploadedFileMetadata): string => {
 };
 
 const isPanelLinkedFileRole = (fileRole: FileRole): fileRole is PanelLinkedFileRole =>
-  fileRole === "parameter" || fileRole === "unsupervised";
+  fileRole === "parameter" || fileRole === "unsupervised" || fileRole === "wave";
 
 const getLinkedFileIdForPanelRole = (panel: PanelState, fileRole: FileRole): string | null => {
   if (fileRole === "data") {
     return panel.fileId;
+  }
+  if (fileRole === "wave") {
+    return panel.waveFileId;
   }
   if (fileRole === "parameter") {
     return panel.parameterFileId;
@@ -781,6 +819,17 @@ const getLinkedFileIdForPanelRole = (panel: PanelState, fileRole: FileRole): str
   }
   return null;
 };
+
+const getWaveFileUrl = (fileId: string): string => `/api/files/${fileId}/content`;
+
+const getWaveMarkerIndex = (currentTime: number, duration: number, maxIndex: number): number | null => {
+  if (!Number.isFinite(currentTime) || !Number.isFinite(duration) || duration <= 0 || maxIndex < 0) {
+    return null;
+  }
+  return clampNumber(Math.round((currentTime / duration) * maxIndex), 0, maxIndex);
+};
+
+const getPrefetchRangeKey = (start: number, end: number): string => `${start}:${end}`;
 
 const extractAutoSyncKey = (fileName: string, workspaceKind: WorkspaceKind): string | null => {
   const trimmed = fileName.trim();
@@ -929,16 +978,87 @@ function ParameterIcon() {
   );
 }
 
+function RewindFiveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M11 7 5.5 12 11 17V7Z" fill="currentColor" />
+      <path d="M18.5 7 13 12l5.5 5V7Z" fill="currentColor" />
+      <path
+        d="M6.2 5.4a7.5 7.5 0 0 1 7.1-.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <text x="12.2" y="21" textAnchor="middle" fontSize="6.5" fontWeight="700" fill="currentColor">
+        5
+      </text>
+    </svg>
+  );
+}
+
+function ForwardFiveIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m13 7 5.5 5-5.5 5V7Z" fill="currentColor" />
+      <path d="M5.5 7 11 12l-5.5 5V7Z" fill="currentColor" />
+      <path
+        d="M17.8 5.4a7.5 7.5 0 0 0-7.1-.8"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <text x="11.8" y="21" textAnchor="middle" fontSize="6.5" fontWeight="700" fill="currentColor">
+        5
+      </text>
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M8 6.5v11l9-5.5-9-5.5Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="7" y="6.5" width="3.2" height="11" rx="1.2" fill="currentColor" />
+      <rect x="13.8" y="6.5" width="3.2" height="11" rx="1.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function RestartIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M8.2 8.1V4.8L4.8 8.2l3.4 3.4V8.9a6 6 0 1 1-2.1 4.6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <text x="12.2" y="20.6" textAnchor="middle" fontSize="6.8" fontWeight="700" fill="currentColor">
+        0
+      </text>
+    </svg>
+  );
+}
+
+const WAVE_PLAYBACK_RATES = [1, 0.75, 0.5, 0.25] as const;
+
 const PanelCard = memo(function PanelCard({
   workspaceKind,
   panel,
   plotState,
   parameterState,
   unsupervisedState,
-  searchMarkerIndex,
-  showSearchInput,
-  searchInputValue,
-  onSearchInputChange,
   isActive,
   onActivate,
   onToggleParameterSummary,
@@ -949,6 +1069,7 @@ const PanelCard = memo(function PanelCard({
   onOpenSettings,
   onResetPanel,
   onSliderRangeCommit,
+  onPrefetchRange,
   onSelectCycle
 }: PanelCardProps) {
   const sliderDebounceRef = useRef<number | null>(null);
@@ -1002,7 +1123,104 @@ const PanelCard = memo(function PanelCard({
   const displayedParameterGroups = selectedCycle?.groups ?? parameterSummary?.groups ?? [];
   const [parameterSplitRatio, setParameterSplitRatio] = useState<number>(0.5);
   const [isSplitDragging, setIsSplitDragging] = useState<boolean>(false);
+  const [isWavePlaying, setIsWavePlaying] = useState<boolean>(false);
+  const [rewindAnimating, setRewindAnimating] = useState<boolean>(false);
+  const [waveMarkerIndex, setWaveMarkerIndex] = useState<number | null>(null);
+  const [wavePlaybackRate, setWavePlaybackRate] = useState<number>(WAVE_PLAYBACK_RATES[0]);
+  const [playheadPixelLeft, setPlayheadPixelLeft] = useState<number | null>(null);
+  const [isPlayheadDragging, setIsPlayheadDragging] = useState<boolean>(false);
   const panelWrapperRef = useRef<HTMLDivElement | null>(null);
+  const chartHostRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<ReactECharts | null>(null);
+  const waveAudioRef = useRef<HTMLAudioElement | null>(null);
+  const waveAnimationTimeoutRef = useRef<number | null>(null);
+  const waveFrameRef = useRef<number | null>(null);
+  const viewportRangeRef = useRef<{ start: number; end: number }>({
+    start: panel.rangeStart,
+    end: panel.rangeEnd
+  });
+  const waveSource = panel.waveFileId ? getWaveFileUrl(panel.waveFileId) : null;
+  const syncChartViewport = useCallback(
+    (nextStart: number, nextEnd: number) => {
+      const totalRows = panel.totalRows ?? activePlot?.originalRowCount ?? 0;
+      if (totalRows <= 0) {
+        viewportRangeRef.current = { start: nextStart, end: nextEnd };
+        return;
+      }
+
+      const maxIndex = Math.max(totalRows - 1, 0);
+      const safeStart = clampNumber(Math.round(nextStart), 0, maxIndex);
+      const safeEnd = clampNumber(Math.round(nextEnd), safeStart, maxIndex);
+      const currentViewportRange = viewportRangeRef.current;
+      const viewportUnchanged =
+        currentViewportRange.start === safeStart && currentViewportRange.end === safeEnd;
+      viewportRangeRef.current = { start: safeStart, end: safeEnd };
+      if (viewportUnchanged) {
+        return;
+      }
+
+      const instance = chartRef.current?.getEchartsInstance();
+      if (!instance) {
+        return;
+      }
+
+      instance.setOption(
+        {
+          xAxis: [
+            { min: safeStart, max: safeEnd },
+            { min: 0, max: maxIndex }
+          ],
+          dataZoom: [
+            {
+              startValue: safeStart,
+              endValue: safeEnd
+            }
+          ]
+        },
+        false,
+        true
+      );
+    },
+    [activePlot?.originalRowCount, panel.totalRows]
+  );
+  const getViewportRange = useCallback(
+    () => viewportRangeRef.current,
+    []
+  );
+  const getCenteredViewportRange = useCallback(
+    (centerIndex: number, maxIndex: number) => {
+      const viewportRange = getViewportRange();
+      const visibleWidth = Math.max(viewportRange.end - viewportRange.start, 0);
+      const centeredStart = clampNumber(
+        centerIndex - Math.floor(visibleWidth / 2),
+        0,
+        Math.max(maxIndex - visibleWidth, 0)
+      );
+      const centeredEnd = clampNumber(centeredStart + visibleWidth, centeredStart, maxIndex);
+
+      return {
+        centeredStart,
+        centeredEnd
+      };
+    },
+    [getViewportRange]
+  );
+  const resetWaveViewportToOrigin = useCallback(() => {
+    if (!panel.fileId) {
+      return;
+    }
+
+    const totalRows = panel.totalRows ?? activePlot?.originalRowCount ?? 0;
+    if (totalRows <= 0) {
+      return;
+    }
+
+    const maxIndex = Math.max(totalRows - 1, 0);
+    const viewportRange = getViewportRange();
+    const visibleWidth = Math.max(viewportRange.end - viewportRange.start, 0);
+    const resetEnd = clampNumber(visibleWidth, 0, maxIndex);
+    onSliderRangeCommit(panel.panelId, 0, resetEnd);
+  }, [activePlot?.originalRowCount, getViewportRange, onSliderRangeCommit, panel.fileId, panel.panelId, panel.totalRows]);
 
   const updateParameterSplitRatio = useCallback((clientY: number) => {
     const wrapper = panelWrapperRef.current;
@@ -1068,6 +1286,477 @@ const PanelCard = memo(function PanelCard({
         minHeight: `${MIN_PARAMETER_SECTION_HEIGHT}px`
       }
     : undefined;
+
+  useEffect(() => {
+    const audio = waveAudioRef.current;
+    if (!audio) {
+      return undefined;
+    }
+
+    const stopMarkerLoop = () => {
+      if (waveFrameRef.current !== null) {
+        window.cancelAnimationFrame(waveFrameRef.current);
+        waveFrameRef.current = null;
+      }
+    };
+
+    const syncMarker = () => {
+      const totalRows = panel.totalRows ?? activePlot?.originalRowCount ?? 0;
+      const maxIndex = Math.max(totalRows - 1, 0);
+      setWaveMarkerIndex(getWaveMarkerIndex(audio.currentTime, audio.duration, maxIndex));
+    };
+
+    const startMarkerLoop = () => {
+      stopMarkerLoop();
+
+      const tick = () => {
+        syncMarker();
+        if (!audio.paused && !audio.ended) {
+          waveFrameRef.current = window.requestAnimationFrame(tick);
+        } else {
+          waveFrameRef.current = null;
+        }
+      };
+
+      waveFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    const handlePlay = () => {
+      setIsWavePlaying(true);
+      startMarkerLoop();
+    };
+    const handlePause = () => {
+      setIsWavePlaying(false);
+      syncMarker();
+      stopMarkerLoop();
+    };
+    const handleEnded = () => {
+      audio.currentTime = 0;
+      setIsWavePlaying(false);
+      setWaveMarkerIndex(0);
+      syncMarker();
+      resetWaveViewportToOrigin();
+      stopMarkerLoop();
+    };
+    const handleLoadedMetadata = () => syncMarker();
+    const handleTimeUpdate = () => syncMarker();
+    const handleSeeked = () => syncMarker();
+
+    audio.addEventListener("play", handlePlay);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("seeked", handleSeeked);
+
+    syncMarker();
+
+    return () => {
+      stopMarkerLoop();
+      audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("loadedmetadata", handleLoadedMetadata);
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("seeked", handleSeeked);
+    };
+  }, [
+    activePlot,
+    onSliderRangeCommit,
+    panel.fileId,
+    panel.panelId,
+    panel.rangeEnd,
+    panel.rangeStart,
+    panel.totalRows,
+    resetWaveViewportToOrigin
+  ]);
+
+  useEffect(() => {
+    const audio = waveAudioRef.current;
+    if (!audio) {
+      return;
+    }
+    audio.pause();
+    audio.currentTime = 0;
+    audio.playbackRate = WAVE_PLAYBACK_RATES[0];
+    audio.defaultPlaybackRate = WAVE_PLAYBACK_RATES[0];
+    setIsWavePlaying(false);
+    setWavePlaybackRate(WAVE_PLAYBACK_RATES[0]);
+    setWaveMarkerIndex(waveSource ? 0 : null);
+  }, [waveSource]);
+
+  useEffect(() => {
+    const audio = waveAudioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    audio.playbackRate = wavePlaybackRate;
+    audio.defaultPlaybackRate = wavePlaybackRate;
+  }, [wavePlaybackRate]);
+
+  useEffect(() => {
+    viewportRangeRef.current = {
+      start: panel.rangeStart,
+      end: panel.rangeEnd
+    };
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      syncChartViewport(panel.rangeStart, panel.rangeEnd);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [panel.rangeEnd, panel.rangeStart, syncChartViewport]);
+
+  useEffect(() => {
+    return () => {
+      if (waveAnimationTimeoutRef.current !== null) {
+        window.clearTimeout(waveAnimationTimeoutRef.current);
+      }
+      if (waveFrameRef.current !== null) {
+        window.cancelAnimationFrame(waveFrameRef.current);
+      }
+    };
+  }, []);
+
+  const syncPlayheadPixelPosition = useCallback(
+    (markerIndex: number | null) => {
+      const instance = chartRef.current?.getEchartsInstance();
+      if (!instance || markerIndex === null) {
+        setPlayheadPixelLeft(null);
+        return;
+      }
+
+      try {
+        const pixel = instance.convertToPixel({ xAxisIndex: 0 }, markerIndex);
+        if (typeof pixel === "number" && Number.isFinite(pixel)) {
+          setPlayheadPixelLeft(pixel + PLAYHEAD_PIXEL_OFFSET);
+          return;
+        }
+      } catch {
+        // Ignore conversion errors during chart mount/resizes.
+      }
+
+      setPlayheadPixelLeft(null);
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!panel.waveFileId) {
+      setPlayheadPixelLeft(null);
+      return;
+    }
+
+    const markerIndex = waveMarkerIndex;
+    const animationFrame = window.requestAnimationFrame(() => {
+      syncPlayheadPixelPosition(markerIndex);
+    });
+
+    const handleResize = () => syncPlayheadPixelPosition(markerIndex);
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [
+    panel.rangeEnd,
+    panel.rangeStart,
+    panel.waveFileId,
+    syncPlayheadPixelPosition,
+    waveMarkerIndex
+  ]);
+
+  const updateWavePlaybackFromMarker = useCallback(
+    (nextMarkerIndex: number, shouldSyncViewport = true) => {
+      const totalRows = panel.totalRows ?? activePlot?.originalRowCount ?? 0;
+      const maxIndex = Math.max(totalRows - 1, 0);
+      const clampedIndex = clampNumber(nextMarkerIndex, 0, maxIndex);
+      setWaveMarkerIndex(clampedIndex);
+
+      const audio = waveAudioRef.current;
+      if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0 || maxIndex <= 0) {
+        return;
+      }
+
+      audio.currentTime = (clampedIndex / maxIndex) * audio.duration;
+
+      if (!shouldSyncViewport || !panel.fileId || panel.totalRows === null || panel.totalRows <= 0) {
+        return;
+      }
+
+      const viewportRange = getViewportRange();
+      if (clampedIndex >= viewportRange.start && clampedIndex <= viewportRange.end) {
+        return;
+      }
+
+      const { centeredStart, centeredEnd } = getCenteredViewportRange(clampedIndex, maxIndex);
+      if (isFullResolutionPlotPayload(plotState.current, panel.totalRows)) {
+        syncChartViewport(centeredStart, centeredEnd);
+        return;
+      }
+
+      onSliderRangeCommit(panel.panelId, centeredStart, centeredEnd);
+    },
+    [activePlot, getCenteredViewportRange, getViewportRange, onSliderRangeCommit, panel.fileId, panel.panelId, panel.totalRows, plotState.current, syncChartViewport]
+  );
+
+  const centerWaveViewportOnMarker = useCallback(
+    (nextMarkerIndex: number | null) => {
+      if (
+        nextMarkerIndex === null ||
+        !panel.fileId ||
+        panel.totalRows === null ||
+        panel.totalRows <= 0
+      ) {
+        return;
+      }
+
+      const maxIndex = Math.max(panel.totalRows - 1, 0);
+      const clampedIndex = clampNumber(Math.round(nextMarkerIndex), 0, maxIndex);
+      const { centeredStart, centeredEnd } = getCenteredViewportRange(clampedIndex, maxIndex);
+
+      if (isFullResolutionPlotPayload(plotState.current, panel.totalRows)) {
+        syncChartViewport(centeredStart, centeredEnd);
+        window.requestAnimationFrame(() => {
+          syncPlayheadPixelPosition(clampedIndex);
+        });
+        return;
+      }
+
+      onSliderRangeCommit(panel.panelId, centeredStart, centeredEnd);
+    },
+    [
+      getCenteredViewportRange,
+      onSliderRangeCommit,
+      panel.fileId,
+      panel.panelId,
+      panel.totalRows,
+      plotState.current,
+      syncChartViewport,
+      syncPlayheadPixelPosition
+    ]
+  );
+
+  const updateWaveMarkerFromClientX = useCallback(
+    (clientX: number) => {
+      if (!panel.waveFileId) {
+        return;
+      }
+
+      const instance = chartRef.current?.getEchartsInstance();
+      const host = chartHostRef.current;
+      if (!instance || !host) {
+        return;
+      }
+
+      const rect = host.getBoundingClientRect();
+      const localX = clampNumber(clientX - rect.left, 0, rect.width);
+
+      try {
+        const axisValue = instance.convertFromPixel({ xAxisIndex: 0 }, localX);
+        if (typeof axisValue === "number" && Number.isFinite(axisValue)) {
+          updateWavePlaybackFromMarker(Math.round(axisValue));
+        }
+      } catch {
+        // Ignore conversion errors during drag.
+      }
+    },
+    [panel.waveFileId, updateWavePlaybackFromMarker]
+  );
+
+  const onPlayheadPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setIsPlayheadDragging(true);
+      updateWaveMarkerFromClientX(event.clientX);
+    },
+    [updateWaveMarkerFromClientX]
+  );
+
+  useEffect(() => {
+    if (!isPlayheadDragging) {
+      return undefined;
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      updateWaveMarkerFromClientX(event.clientX);
+    };
+
+    const stopDragging = () => {
+      setIsPlayheadDragging(false);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopDragging);
+    window.addEventListener("pointercancel", stopDragging);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopDragging);
+      window.removeEventListener("pointercancel", stopDragging);
+    };
+  }, [isPlayheadDragging, updateWaveMarkerFromClientX]);
+
+  const triggerRewindAnimation = useCallback(() => {
+    if (waveAnimationTimeoutRef.current !== null) {
+      window.clearTimeout(waveAnimationTimeoutRef.current);
+    }
+    setRewindAnimating(true);
+    waveAnimationTimeoutRef.current = window.setTimeout(() => {
+      setRewindAnimating(false);
+      waveAnimationTimeoutRef.current = null;
+    }, 260);
+  }, []);
+
+  const toggleWavePlayback = useCallback(async () => {
+    const audio = waveAudioRef.current;
+    if (!audio || !waveSource) {
+      return;
+    }
+
+    const totalRows = panel.totalRows ?? activePlot?.originalRowCount ?? 0;
+    const maxIndex = Math.max(totalRows - 1, 0);
+    const markerToCenter = (
+      waveMarkerIndex ??
+      (audio.duration && Number.isFinite(audio.duration) && audio.duration > 0 && maxIndex > 0
+        ? getWaveMarkerIndex(audio.currentTime, audio.duration, maxIndex)
+        : 0)
+    ) ?? 0;
+    const viewportRange = getViewportRange();
+    const isMarkerVisible =
+      markerToCenter >= viewportRange.start && markerToCenter <= viewportRange.end;
+    if (!isMarkerVisible) {
+      centerWaveViewportOnMarker(markerToCenter);
+    }
+
+    if (audio.paused) {
+      try {
+        await audio.play();
+      } catch {
+        setIsWavePlaying(false);
+      }
+      return;
+    }
+
+    audio.pause();
+  }, [activePlot, centerWaveViewportOnMarker, getViewportRange, panel.totalRows, waveMarkerIndex, waveSource]);
+
+  const seekWaveBySeconds = useCallback(
+    (deltaSeconds: number) => {
+      const audio = waveAudioRef.current;
+      if (!audio || !waveSource) {
+        return;
+      }
+
+      audio.currentTime = Math.max(0, Math.min(audio.duration || Number.POSITIVE_INFINITY, audio.currentTime + deltaSeconds));
+      if (deltaSeconds < 0) {
+        triggerRewindAnimation();
+      }
+    },
+    [triggerRewindAnimation, waveSource]
+  );
+
+  const resetWavePlayback = useCallback(() => {
+    const audio = waveAudioRef.current;
+    if (!audio || !waveSource) {
+      return;
+    }
+
+    audio.pause();
+    audio.currentTime = 0;
+    setIsWavePlaying(false);
+    setWaveMarkerIndex(0);
+    resetWaveViewportToOrigin();
+  }, [resetWaveViewportToOrigin, waveSource]);
+
+  const cycleWavePlaybackRate = useCallback(() => {
+    setWavePlaybackRate((currentRate) => {
+      const currentIndex = WAVE_PLAYBACK_RATES.findIndex((rate) => rate === currentRate);
+      const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % WAVE_PLAYBACK_RATES.length : 0;
+      return WAVE_PLAYBACK_RATES[nextIndex];
+    });
+  }, []);
+
+  useEffect(() => {
+    if (
+      !panel.waveFileId ||
+      !panel.fileId ||
+      waveMarkerIndex === null ||
+      panel.totalRows === null ||
+      panel.totalRows <= 0
+    ) {
+      return;
+    }
+
+    const hasFullResolutionCurrent = isFullResolutionPlotPayload(plotState.current, panel.totalRows);
+    const viewportRange = getViewportRange();
+    const visibleWidth = Math.max(viewportRange.end - viewportRange.start, 0);
+    const maxIndex = Math.max(panel.totalRows - 1, 0);
+
+    if (hasFullResolutionCurrent) {
+      const maxStart = Math.max(maxIndex - visibleWidth, 0);
+
+      if (!isWavePlaying || waveMarkerIndex <= viewportRange.end) {
+        return;
+      }
+
+      const nextStart = clampNumber(viewportRange.start + visibleWidth + 1, 0, maxStart);
+      const nextEnd = clampNumber(nextStart + visibleWidth, nextStart, maxIndex);
+
+      if (nextStart === viewportRange.start && nextEnd === viewportRange.end) {
+        return;
+      }
+
+      syncChartViewport(nextStart, nextEnd);
+      return;
+    }
+
+    const pageWidth = visibleWidth + 1;
+    const prefetchLead = Math.max(
+      AUTO_ADVANCE_PREFETCH_MIN_ROWS,
+      Math.floor(pageWidth * AUTO_ADVANCE_PREFETCH_RATIO)
+    );
+    const stepsForward = Math.floor((waveMarkerIndex - (viewportRange.end + 1)) / pageWidth) + 1;
+    const nextStart = clampNumber(viewportRange.start + stepsForward * pageWidth, 0, maxIndex);
+    const nextEnd = clampNumber(nextStart + visibleWidth, nextStart, maxIndex);
+
+    if (isWavePlaying && waveMarkerIndex >= viewportRange.end - prefetchLead) {
+      for (let lookahead = 1; lookahead <= 3; lookahead += 1) {
+        const lookaheadStart = clampNumber(viewportRange.start + lookahead * pageWidth, 0, maxIndex);
+        const lookaheadEnd = clampNumber(lookaheadStart + visibleWidth, lookaheadStart, maxIndex);
+        if (lookaheadStart === viewportRange.start && lookaheadEnd === viewportRange.end) {
+          continue;
+        }
+        onPrefetchRange(panel.panelId, lookaheadStart, lookaheadEnd);
+      }
+    }
+
+    if (
+      waveMarkerIndex <= viewportRange.end ||
+      nextStart === viewportRange.start && nextEnd === viewportRange.end
+    ) {
+      return;
+    }
+
+    onSliderRangeCommit(panel.panelId, nextStart, nextEnd);
+  }, [
+    getViewportRange,
+    isWavePlaying,
+    onPrefetchRange,
+    onSliderRangeCommit,
+    panel.fileId,
+    panel.panelId,
+    panel.totalRows,
+    panel.waveFileId,
+    plotState.current,
+    syncChartViewport,
+    waveMarkerIndex
+  ]);
 
   const chartOption = useMemo<EChartsOption | null>(() => {
     if (!panel.fileId || !activePlot) {
@@ -1155,33 +1844,6 @@ const PanelCard = memo(function PanelCard({
         },
         itemStyle: { color: workspaceKind === "ecg" ? ECG_SERIES_COLORS.amplitude : "#79c0ff" },
         data: amplitudePairs
-      });
-    }
-    if (searchMarkerIndex !== null) {
-      const markerIndex = clampNumber(searchMarkerIndex, 0, maxIndex);
-      mainSeries.push({
-        name: "Search Marker",
-        type: "line",
-        xAxisIndex: 0,
-        yAxisIndex: 0,
-        silent: true,
-        showSymbol: false,
-        animation: false,
-        lineStyle: { opacity: 0 },
-        itemStyle: { opacity: 0 },
-        tooltip: { show: false },
-        data: amplitudePairs.length > 0 ? [amplitudePairs[0]] : [[markerIndex, 0]],
-        markLine: {
-          silent: true,
-          symbol: ["none", "none"],
-          animation: false,
-          label: { show: false },
-          lineStyle: {
-            color: "#ff4d4f",
-            width: 1
-          },
-          data: [{ xAxis: markerIndex }]
-        }
       });
     }
     if (workspaceKind === "heartsound" && selectedCycle && panel.showSelectedCycleHighlight) {
@@ -1624,7 +2286,7 @@ const PanelCard = memo(function PanelCard({
       ],
       series: mainSeries
     };
-  }, [activePlot, overviewPlot, panel, searchMarkerIndex, selectedCycle, unsupervisedSummary, workspaceKind]);
+  }, [activePlot, overviewPlot, panel, selectedCycle, unsupervisedSummary, workspaceKind]);
 
   const chartLegendItems = useMemo(() => {
     const seriesItems =
@@ -1731,12 +2393,78 @@ const PanelCard = memo(function PanelCard({
         <div className="panel-title-group">
           <div className="panel-title">Panel {panel.panelId}</div>
           <div className="panel-file">{panel.fileName ?? "No file assigned"}</div>
+          {panel.waveFileName ? (
+            <div className="panel-linked-parameter">Wave: {panel.waveFileName}</div>
+          ) : null}
           {panel.parameterFileName ? (
             <div className="panel-linked-parameter">Parameter: {panel.parameterFileName}</div>
           ) : null}
           {panel.unsupervisedFileName ? (
             <div className="panel-linked-parameter">Unsupervised: {panel.unsupervisedFileName}</div>
           ) : null}
+        </div>
+
+        <div
+          className="panel-media-controls panel-media-controls-centered"
+          aria-label="Wave playback controls"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className={rewindAnimating ? "media-control-button is-animating" : "media-control-button"}
+            aria-label="Back 5 seconds"
+            title={panel.waveFileId ? "Back 5 seconds" : "Link a wave file to use playback"}
+            disabled={!panel.waveFileId}
+            onClick={() => seekWaveBySeconds(-5)}
+          >
+            <RewindFiveIcon />
+          </button>
+          <button
+            type="button"
+            className="media-control-button media-control-button-primary"
+            aria-label={isWavePlaying ? "Pause wave playback" : "Play wave playback"}
+            title={panel.waveFileId ? (isWavePlaying ? "Pause" : "Play") : "Link a wave file to use playback"}
+            disabled={!panel.waveFileId}
+            onClick={() => {
+              void toggleWavePlayback();
+            }}
+          >
+            {isWavePlaying ? <PauseIcon /> : <PlayIcon />}
+          </button>
+          <button
+            type="button"
+            className="media-control-button"
+            aria-label="Forward 5 seconds"
+            title={panel.waveFileId ? "Forward 5 seconds" : "Link a wave file to use playback"}
+            disabled={!panel.waveFileId}
+            onClick={() => seekWaveBySeconds(5)}
+          >
+            <ForwardFiveIcon />
+          </button>
+          <button
+            type="button"
+            className="media-control-button"
+            aria-label="Reset wave playback to 0 seconds"
+            title={panel.waveFileId ? "Reset to 0 seconds" : "Link a wave file to use playback"}
+            disabled={!panel.waveFileId}
+            onClick={resetWavePlayback}
+          >
+            <RestartIcon />
+          </button>
+          <button
+            type="button"
+            className="media-control-button media-control-button-rate"
+            aria-label={`Wave playback speed ${wavePlaybackRate.toFixed(2)}x`}
+            title={
+              panel.waveFileId
+                ? `Playback speed ${wavePlaybackRate.toFixed(2)}x`
+                : "Link a wave file to use playback"
+            }
+            disabled={!panel.waveFileId}
+            onClick={cycleWavePlaybackRate}
+          >
+            <span className="media-control-rate-label">{wavePlaybackRate.toFixed(2).replace(/\.00$/, "")}x</span>
+          </button>
         </div>
 
         <div className="panel-actions" onClick={(event) => event.stopPropagation()}>
@@ -1787,16 +2515,6 @@ const PanelCard = memo(function PanelCard({
           >
             <ResetIcon />
           </button>
-          {showSearchInput ? (
-            <input
-              type="number"
-              inputMode="numeric"
-              className="panel-index-input"
-              placeholder="Index"
-              value={searchInputValue}
-              onChange={(event) => onSearchInputChange(event.target.value)}
-            />
-          ) : null}
         </div>
       </div>
 
@@ -1813,14 +2531,38 @@ const PanelCard = memo(function PanelCard({
             }
           >
             <div className="panel-chart-section" style={chartSectionStyle}>
-              <div className="panel-chart-host">
+              <div ref={chartHostRef} className="panel-chart-host">
                 <ReactECharts
+                  ref={chartRef}
                   option={chartOption}
                   style={{ width: "100%", height: "100%" }}
                   onEvents={{ datazoom: onDataZoom, click: onNavigatorClick }}
                   notMerge
                   lazyUpdate
                 />
+                {panel.waveFileId && playheadPixelLeft !== null ? (
+                  <div
+                    className={
+                      isPlayheadDragging
+                        ? "chart-playhead-overlay is-dragging"
+                        : "chart-playhead-overlay"
+                    }
+                    style={{ left: `${playheadPixelLeft}px` }}
+                    aria-hidden="true"
+                  >
+                    <div className="chart-playhead-line" />
+                    <button
+                      type="button"
+                      className="chart-playhead-handle"
+                      aria-label="Drag audio playhead"
+                      title="Drag to adjust audio position"
+                      style={{ top: `${PLAYHEAD_HANDLE_TOP}px` }}
+                      onPointerDown={onPlayheadPointerDown}
+                    >
+                      <span className="chart-playhead-handle-dot" />
+                    </button>
+                  </div>
+                ) : null}
                 {chartLegendItems.length > 0 ? (
                   <div className="panel-chart-legend" aria-label="Visible chart series">
                     {chartLegendItems.map((seriesItem) => (
@@ -1877,9 +2619,9 @@ const PanelCard = memo(function PanelCard({
                 title="Drag to resize"
                 onPointerDown={onSplitHandlePointerDown}
                 onClick={(event) => event.preventDefault()}
-              >
-                <span className="panel-split-handle-bar" />
-              </button>
+          >
+            <span className="panel-split-handle-bar" />
+          </button>
             ) : null}
             {showParameterSection ? (
               <div className="panel-parameter-section" style={parameterSectionStyle}>
@@ -2013,6 +2755,7 @@ const PanelCard = memo(function PanelCard({
           </div>
         )}
       </div>
+      <audio ref={waveAudioRef} preload="metadata" hidden src={waveSource ?? undefined} />
     </article>
   );
 });
@@ -2044,6 +2787,7 @@ function App() {
   const [seriesPanelId, setSeriesPanelId] = useState<PanelId | null>(null);
 
   const requestSeqRef = useRef<Record<PanelId, number>>({ 1: 0, 2: 0, 3: 0, 4: 0 });
+  const prefetchedRangeRef = useRef<PrefetchedRangeStore>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2059,7 +2803,6 @@ function App() {
     filesLoadingByWorkspace,
     uploadingByWorkspace,
     searchText,
-    chartSearchIndexText,
     statusMessage,
     selectedDeleteIds
   } = appState;
@@ -2075,7 +2818,6 @@ function App() {
   const files = filesByWorkspace[activeWorkspace];
   const filesLoading = filesLoadingByWorkspace[activeWorkspace];
   const uploading = uploadingByWorkspace[activeWorkspace];
-  const chartSearchMarkerIndex = splitMode === 1 ? parseNumericInput(chartSearchIndexText) : null;
 
   const updateAppState = useCallback((updater: (state: AppState) => AppState) => {
     setAppState((previous) => updater(previous));
@@ -2145,6 +2887,7 @@ function App() {
   const clearPanelPlotState = useCallback(
     (panelId: PanelId) => {
       requestSeqRef.current[panelId] += 1;
+      delete prefetchedRangeRef.current[panelId];
       setPanelPlotState(panelId, () => createEmptyPlotState());
     },
     [setPanelPlotState]
@@ -2260,6 +3003,7 @@ function App() {
         end?: number;
         panelWidth?: number;
         targetPoints?: number;
+        fullResolution?: boolean;
       }
     ): Promise<PlotDataPayload> => {
       const query = new URLSearchParams();
@@ -2275,6 +3019,9 @@ function App() {
       }
       if (typeof params.targetPoints === "number") {
         query.set("targetPoints", String(params.targetPoints));
+      }
+      if (params.fullResolution) {
+        query.set("fullResolution", "true");
       }
 
       const response = await fetch(`/api/files/${fileId}/plot-data?${query.toString()}`);
@@ -2415,6 +3162,120 @@ function App() {
       }
     },
     [fetchPlotData, setPanelPlotState]
+  );
+
+  const requestFullResolutionPlot = useCallback(
+    async (panelId: PanelId, fileId: string, totalRows: number) => {
+      if (totalRows <= 0) {
+        return null;
+      }
+
+      const requestSeq = ++requestSeqRef.current[panelId];
+      setPanelPlotState(panelId, (state) => ({
+        ...state,
+        loading: true,
+        error: null
+      }));
+
+      try {
+        const payload = await fetchPlotData(fileId, {
+          mode: "range",
+          start: 0,
+          end: Math.max(totalRows - 1, 0),
+          fullResolution: true
+        });
+
+        if (requestSeq !== requestSeqRef.current[panelId]) {
+          return null;
+        }
+
+        setPanelPlotState(panelId, (state) => ({
+          ...state,
+          current: payload,
+          loading: false,
+          error: null
+        }));
+        return payload;
+      } catch (error) {
+        if (requestSeq !== requestSeqRef.current[panelId]) {
+          return null;
+        }
+
+        const message = error instanceof Error ? error.message : "failed to load full-resolution data";
+        setPanelPlotState(panelId, (state) => ({
+          ...state,
+          loading: false,
+          error: message
+        }));
+        return null;
+      }
+    },
+    [fetchPlotData, setPanelPlotState]
+  );
+
+  const prefetchRangePlot = useCallback(
+    async (panelId: PanelId, start: number, end: number) => {
+      const panel = panels.find((item) => item.panelId === panelId);
+      if (!panel?.fileId) {
+        return;
+      }
+
+      if (isFullResolutionPlotPayload(panelPlots[panelId]?.current ?? null, panel.totalRows)) {
+        return;
+      }
+
+      const rangeKey = getPrefetchRangeKey(start, end);
+      const panelPrefetches = prefetchedRangeRef.current[panelId] ?? {};
+      const existing = panelPrefetches[rangeKey];
+      if (existing && existing.fileId === panel.fileId && (existing.pending || existing.payload !== null)) {
+        return;
+      }
+
+      prefetchedRangeRef.current[panelId] = {
+        ...panelPrefetches,
+        [rangeKey]: {
+          fileId: panel.fileId,
+          start,
+          end,
+          payload: null,
+          pending: true
+        }
+      };
+
+      try {
+        const payload = await fetchPlotData(panel.fileId, {
+          mode: "range",
+          start,
+          end,
+          targetPoints: PANEL_TARGET_POINTS
+        });
+        const latest = prefetchedRangeRef.current[panelId]?.[rangeKey];
+        if (latest && latest.fileId === panel.fileId) {
+          prefetchedRangeRef.current[panelId] = {
+            ...(prefetchedRangeRef.current[panelId] ?? {}),
+            [rangeKey]: {
+              fileId: panel.fileId,
+              start,
+              end,
+              payload,
+              pending: false
+            }
+          };
+        }
+      } catch {
+        const latest = prefetchedRangeRef.current[panelId]?.[rangeKey];
+        if (latest && latest.fileId === panel.fileId) {
+          const nextPanelPrefetches = { ...(prefetchedRangeRef.current[panelId] ?? {}) };
+          delete nextPanelPrefetches[rangeKey];
+          if (Object.keys(nextPanelPrefetches).length === 0) {
+            delete prefetchedRangeRef.current[panelId];
+          } else {
+            prefetchedRangeRef.current[panelId] = nextPanelPrefetches;
+          }
+        }
+      }
+    },
+    [fetchPlotData, panelPlots, panels]
   );
 
   const requestParameterSummaryForPanel = useCallback(
@@ -2668,7 +3529,13 @@ function App() {
   };
 
   const applyPanelRange = useCallback(
-    (panelId: PanelId, nextStart: number, nextEnd: number, forceFetch = false) => {
+    (
+      panelId: PanelId,
+      nextStart: number,
+      nextEnd: number,
+      forceFetch = false,
+      skipLinkedFetch = false
+    ) => {
       const panel = panels.find((item) => item.panelId === panelId);
       if (!panel || !panel.fileId || panel.totalRows === null || panel.totalRows <= 0) {
         return;
@@ -2693,41 +3560,82 @@ function App() {
       }));
 
       const isFullRange = clampedStart === 0 && clampedEnd === maxIndex;
+      const currentPlot = panelPlots[panelId].current;
+      const hasFullResolutionCurrent = isFullResolutionPlotPayload(currentPlot, panel.totalRows);
       if (isFullRange) {
-        const overview = panelPlots[panelId].overview;
-        if (overview) {
+        if (hasFullResolutionCurrent && currentPlot) {
           setPanelPlotState(panelId, (state) => ({
             ...state,
-            current: overview,
+            current: currentPlot,
             loading: false,
             error: null
           }));
         } else {
-          void requestOverviewPlot(panelId, panel.fileId);
+          const overview = panelPlots[panelId].overview;
+          if (overview) {
+            setPanelPlotState(panelId, (state) => ({
+              ...state,
+              current: overview,
+              loading: false,
+              error: null
+            }));
+          } else {
+            void requestOverviewPlot(panelId, panel.fileId);
+          }
         }
-        if (panel.parameterFileId) {
+        if (!skipLinkedFetch && panel.parameterFileId) {
           void requestParameterSummaryForPanel(panelId, panel.parameterFileId, clampedStart, clampedEnd);
-        } else {
+        } else if (!skipLinkedFetch) {
           clearPanelParameterState(panelId);
         }
-        if (panel.unsupervisedFileId) {
+        if (!skipLinkedFetch && panel.unsupervisedFileId) {
           void requestUnsupervisedSummaryForPanel(panelId, panel.unsupervisedFileId, clampedStart, clampedEnd);
-        } else {
+        } else if (!skipLinkedFetch) {
           clearPanelUnsupervisedState(panelId);
         }
         return;
       }
 
-      if (panel.parameterFileId) {
+      if (!skipLinkedFetch && panel.parameterFileId) {
         void requestParameterSummaryForPanel(panelId, panel.parameterFileId, clampedStart, clampedEnd);
-      } else {
+      } else if (!skipLinkedFetch) {
         clearPanelParameterState(panelId);
       }
-      if (panel.unsupervisedFileId) {
+      if (!skipLinkedFetch && panel.unsupervisedFileId) {
         void requestUnsupervisedSummaryForPanel(panelId, panel.unsupervisedFileId, clampedStart, clampedEnd);
-      } else {
+      } else if (!skipLinkedFetch) {
         clearPanelUnsupervisedState(panelId);
       }
+
+      if (hasFullResolutionCurrent && currentPlot) {
+        setPanelPlotState(panelId, (state) => ({
+          ...state,
+          current: currentPlot,
+          loading: false,
+          error: null
+        }));
+        return;
+      }
+
+      const rangeKey = getPrefetchRangeKey(clampedStart, clampedEnd);
+      const prefetched = prefetchedRangeRef.current[panelId]?.[rangeKey];
+      if (prefetched && prefetched.fileId === panel.fileId && prefetched.payload) {
+        setPanelPlotState(panelId, (state) => ({
+          ...state,
+          current: prefetched.payload,
+          loading: false,
+          error: null
+        }));
+        const nextPanelPrefetches = { ...(prefetchedRangeRef.current[panelId] ?? {}) };
+        delete nextPanelPrefetches[rangeKey];
+        if (Object.keys(nextPanelPrefetches).length === 0) {
+          delete prefetchedRangeRef.current[panelId];
+        } else {
+          prefetchedRangeRef.current[panelId] = nextPanelPrefetches;
+        }
+        return;
+      }
+
       void requestRangePlot(panelId, panel.fileId, clampedStart, clampedEnd);
     },
     [
@@ -2797,11 +3705,14 @@ function App() {
       const initialRangeEnd = getInitialRangeEnd(file.rowCount, activePanel.workspaceKind);
       const matchedParameterFile = findAutoLinkedFile(files, file, "parameter");
       const matchedUnsupervisedFile = findAutoLinkedFile(files, file, "unsupervised");
+      const matchedWaveFile = findAutoLinkedFile(files, file, "wave");
 
       updatePanelState(activePanelId, (panel) => ({
         ...panel,
         fileId: file.fileId,
         fileName: file.originalName,
+        waveFileId: matchedWaveFile?.fileId ?? null,
+        waveFileName: matchedWaveFile?.originalName ?? null,
         parameterFileId: matchedParameterFile?.fileId ?? null,
         parameterFileName: matchedParameterFile?.originalName ?? null,
         unsupervisedFileId: matchedUnsupervisedFile?.fileId ?? null,
@@ -2815,18 +3726,26 @@ function App() {
       clearPanelPlotState(activePanelId);
       void (async () => {
         const overviewPayload = await requestOverviewPlot(activePanelId, file.fileId, false);
-        if (overviewPayload !== null) {
+        const fullResolutionPayload = await requestFullResolutionPlot(activePanelId, file.fileId, file.rowCount);
+        const hasPlot = overviewPayload !== null || fullResolutionPayload !== null;
+
+        if (!hasPlot) {
+          return;
+        }
+
+        if (fullResolutionPayload === null) {
           await requestRangePlot(activePanelId, file.fileId, 0, initialRangeEnd);
-          if (matchedParameterFile) {
-            await requestParameterSummaryForPanel(activePanelId, matchedParameterFile.fileId, 0, initialRangeEnd);
-          } else {
-            clearPanelParameterState(activePanelId);
-          }
-          if (matchedUnsupervisedFile) {
-            await requestUnsupervisedSummaryForPanel(activePanelId, matchedUnsupervisedFile.fileId, 0, initialRangeEnd);
-          } else {
-            clearPanelUnsupervisedState(activePanelId);
-          }
+        }
+
+        if (matchedParameterFile) {
+          await requestParameterSummaryForPanel(activePanelId, matchedParameterFile.fileId, 0, initialRangeEnd);
+        } else {
+          clearPanelParameterState(activePanelId);
+        }
+        if (matchedUnsupervisedFile) {
+          await requestUnsupervisedSummaryForPanel(activePanelId, matchedUnsupervisedFile.fileId, 0, initialRangeEnd);
+        } else {
+          clearPanelUnsupervisedState(activePanelId);
         }
       })();
     },
@@ -2840,6 +3759,7 @@ function App() {
       requestOverviewPlot,
       requestUnsupervisedSummaryForPanel,
       requestParameterSummaryForPanel,
+      requestFullResolutionPlot,
       requestRangePlot,
       updatePanelState
     ]
@@ -2849,6 +3769,8 @@ function App() {
     (file: UploadedFileMetadata, fileRole: PanelLinkedFileRole) => {
       updatePanelState(activePanelId, (panel) => ({
         ...panel,
+        waveFileId: fileRole === "wave" ? file.fileId : panel.waveFileId,
+        waveFileName: fileRole === "wave" ? file.originalName : panel.waveFileName,
         parameterFileId: fileRole === "parameter" ? file.fileId : panel.parameterFileId,
         parameterFileName: fileRole === "parameter" ? file.originalName : panel.parameterFileName,
         unsupervisedFileId: fileRole === "unsupervised" ? file.fileId : panel.unsupervisedFileId,
@@ -3203,13 +4125,27 @@ function App() {
       const affectedUnsupervisedPanels = panels
         .filter((panel) => panel.unsupervisedFileId && deletedSet.has(panel.unsupervisedFileId))
         .map((panel) => panel.panelId);
+      const affectedWavePanels = panels
+        .filter((panel) => panel.waveFileId && deletedSet.has(panel.waveFileId))
+        .map((panel) => panel.panelId);
 
-      if (affectedDataPanels.length > 0 || affectedParameterPanels.length > 0 || affectedUnsupervisedPanels.length > 0) {
+      if (
+        affectedDataPanels.length > 0 ||
+        affectedParameterPanels.length > 0 ||
+        affectedUnsupervisedPanels.length > 0 ||
+        affectedWavePanels.length > 0
+      ) {
         updateAppState((previous) => ({
           ...previous,
           panels: previous.panels.map((panel) =>
             panel.fileId && deletedSet.has(panel.fileId)
               ? createDefaultPanelState(panel.panelId, panel.workspaceKind)
+              : panel.waveFileId && deletedSet.has(panel.waveFileId)
+                ? {
+                    ...panel,
+                    waveFileId: null,
+                    waveFileName: null
+                  }
               : panel.parameterFileId && deletedSet.has(panel.parameterFileId)
                 ? {
                     ...panel,
@@ -3714,15 +4650,6 @@ function App() {
                     plotState={panelPlots[panelId]}
                     parameterState={panelParameters[panelId]}
                     unsupervisedState={panelUnsupervised[panelId]}
-                    searchMarkerIndex={chartSearchMarkerIndex}
-                    showSearchInput={splitMode === 1}
-                    searchInputValue={chartSearchIndexText}
-                    onSearchInputChange={(value) =>
-                      updateAppState((previous) => ({
-                        ...previous,
-                        chartSearchIndexText: value
-                      }))
-                    }
                     isActive={panelId === activePanelId}
                     onActivate={(nextPanelId) =>
                       updateAppState((previous) => ({
@@ -3738,6 +4665,7 @@ function App() {
                     onOpenSettings={openSettingsForPanel}
                     onResetPanel={resetPanel}
                     onSliderRangeCommit={applyPanelRange}
+                    onPrefetchRange={prefetchRangePlot}
                     onSelectCycle={selectPanelCycle}
                   />
                 );

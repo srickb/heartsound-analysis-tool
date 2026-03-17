@@ -5,9 +5,10 @@ from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from app.config import ensure_storage_directories
+from app.config import UPLOAD_DIR, ensure_storage_directories
 from app.db import init_db
 from app.services.auth_service import (
     SESSION_COOKIE_NAME,
@@ -220,6 +221,29 @@ def get_file(file_id: str, request: Request) -> dict[str, Any]:
     return {"file": metadata}
 
 
+@app.get("/api/files/{file_id}/content")
+def get_file_content(file_id: str, request: Request) -> FileResponse:
+    try:
+        require_viewer_access(_session_token(request))
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+    metadata = get_file_metadata(file_id)
+    if metadata is None:
+        raise HTTPException(status_code=404, detail="file metadata not found")
+
+    stored_name = metadata.get("storedName")
+    if not isinstance(stored_name, str) or not stored_name:
+        raise HTTPException(status_code=404, detail="stored file not found")
+
+    file_path = UPLOAD_DIR / stored_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="stored file not found")
+
+    media_type = "audio/wav" if metadata.get("extension") == ".wav" else None
+    return FileResponse(path=file_path, media_type=media_type)
+
+
 async def _handle_upload_request(
     files: list[UploadFile],
     relative_paths: list[str] | None,
@@ -341,6 +365,7 @@ def get_file_plot_data(
     end: int | None = None,
     panelWidth: int | None = None,
     targetPoints: int | None = None,
+    fullResolution: bool = False,
 ) -> dict[str, Any]:
     try:
         require_viewer_access(_session_token(request))
@@ -351,6 +376,7 @@ def get_file_plot_data(
             end=end,
             panel_width=panelWidth,
             target_points=targetPoints,
+            full_resolution=fullResolution,
         )
     except PlotDataNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
