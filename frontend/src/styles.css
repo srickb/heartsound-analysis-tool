@@ -927,8 +927,54 @@ body {
   color: #8b949e;
 }
 
-.parameter-cycle-select {
-  min-width: 160px;
+.parameter-cycle-stepper {
+  display: inline-grid;
+  grid-template-columns: auto minmax(120px, auto) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.parameter-cycle-stepper-button {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #30363d;
+  border-radius: 999px;
+  background: #0d1117;
+  color: #c9d1d9;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.parameter-cycle-stepper-button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.parameter-cycle-stepper-button:hover:not(:disabled) {
+  border-color: #58a6ff;
+  color: #79c0ff;
+}
+
+.parameter-cycle-stepper-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.parameter-cycle-current {
+  min-width: 120px;
+  height: 32px;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  background: #111827;
+  color: #f0f6fc;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .parameter-cycle-range {
@@ -936,10 +982,296 @@ body {
   color: #79c0ff;
 }
 
+.parameter-cycle-heart-rate {
+  margin-left: auto;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 123, 114, 0.42);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255, 123, 114, 0.18), rgba(15, 23, 35, 0.96));
+  display: inline-grid;
+  align-items: center;
+  gap: 6px;
+  box-shadow: inset 0 0 0 1px rgba(255, 123, 114, 0.08);
+  cursor: pointer;
+  appearance: none;
+  text-align: left;
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+  position: relative;
+  overflow: visible;
+}
+
+.parameter-cycle-heart-rate:hover {
+  border-color: rgba(255, 123, 114, 0.7);
+}
+
+.parameter-cycle-heart-rate.is-active {
+  box-shadow: inset 0 0 0 1px rgba(255, 221, 218, 0.2), 0 0 0 1px rgba(255, 123, 114, 0.34);
+  transform: translateY(-1px);
+}
+
+.parameter-cycle-heart-rate-label {
+  font-size: 13px;
+  line-height: 1.35;
+  color: #ff7b72;
+  font-weight: 700;
+}
+
+.parameter-cycle-heart-rate-value {
+  font-size: 20px;
+  line-height: 1;
+  color: #ffe2df;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
 .parameter-group-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 10px;
+}
+
+.heartsound-parameter-layout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.heartsound-parameter-section {
+  border: 1px solid #30363d;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.98), rgba(13, 17, 23, 0.98));
+  overflow: visible;
+  min-width: 0;
+}
+
+.heartsound-parameter-section.is-s1 {
+  border-color: rgba(121, 192, 255, 0.34);
+}
+
+.heartsound-parameter-section.is-s2 {
+  border-color: rgba(63, 185, 80, 0.34);
+}
+
+.heartsound-parameter-section.is-relation {
+  border-color: rgba(249, 196, 74, 0.34);
+}
+
+.heartsound-parameter-section.is-rs-score {
+  border-color: rgba(255, 123, 114, 0.34);
+  grid-column: 1 / -1;
+}
+
+.heartsound-parameter-section-header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid rgba(48, 54, 61, 0.9);
+  display: grid;
+  gap: 4px;
+}
+
+.heartsound-parameter-section.is-s1 .heartsound-parameter-section-header {
+  background: linear-gradient(180deg, rgba(121, 192, 255, 0.16), rgba(121, 192, 255, 0.04));
+}
+
+.heartsound-parameter-section.is-s2 .heartsound-parameter-section-header {
+  background: linear-gradient(180deg, rgba(63, 185, 80, 0.16), rgba(63, 185, 80, 0.04));
+}
+
+.heartsound-parameter-section.is-relation .heartsound-parameter-section-header {
+  background: linear-gradient(180deg, rgba(249, 196, 74, 0.16), rgba(249, 196, 74, 0.04));
+}
+
+.heartsound-parameter-section.is-rs-score .heartsound-parameter-section-header {
+  background: linear-gradient(180deg, rgba(255, 123, 114, 0.16), rgba(255, 123, 114, 0.04));
+}
+
+.heartsound-parameter-section.is-rs-score .heartsound-parameter-metric-grid {
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+}
+
+.heartsound-parameter-section-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #f0f6fc;
+  letter-spacing: 0.02em;
+}
+
+.heartsound-parameter-section-subtitle {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #8b949e;
+}
+
+.heartsound-parameter-section-body {
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.heartsound-parameter-block {
+  display: grid;
+  gap: 8px;
+}
+
+.heartsound-parameter-block-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #c9d1d9;
+}
+
+.heartsound-parameter-block-title.is-rs-score {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(121, 192, 255, 0.24);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #79c0ff;
+}
+
+.heartsound-parameter-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+}
+
+.heartsound-parameter-metric-card {
+  position: relative;
+  border: 1px solid rgba(48, 54, 61, 0.9);
+  border-radius: 12px;
+  background: rgba(15, 23, 35, 0.94);
+  padding: 10px 11px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  cursor: pointer;
+  appearance: none;
+  text-align: left;
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.heartsound-parameter-metric-card:hover {
+  border-color: rgba(121, 192, 255, 0.36);
+}
+
+.heartsound-parameter-metric-card.is-active {
+  border-color: rgba(121, 192, 255, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(121, 192, 255, 0.16);
+  transform: translateY(-1px);
+}
+
+.heartsound-parameter-metric-name {
+  font-size: 13px;
+  line-height: 1.35;
+  color: #c9d1d9;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.heartsound-parameter-metric-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.heartsound-parameter-metric-value {
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 800;
+  color: #f0f6fc;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.heartsound-parameter-metric-unit {
+  font-size: 10px;
+  color: #79c0ff;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.heartsound-parameter-tooltip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  transform: translateX(-50%) translateY(6px);
+  min-width: 200px;
+  max-width: min(280px, 72vw);
+  padding: 10px 12px;
+  border: 1px solid rgba(121, 192, 255, 0.28);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.98), rgba(8, 13, 20, 0.98));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.36);
+  display: grid;
+  gap: 6px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 24;
+  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms ease;
+}
+
+.heartsound-parameter-tooltip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 12px;
+  height: 12px;
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 1px solid rgba(121, 192, 255, 0.22);
+  border-bottom: 1px solid rgba(121, 192, 255, 0.22);
+  background: rgba(8, 13, 20, 0.98);
+}
+
+.heartsound-parameter-metric-card:hover .heartsound-parameter-tooltip,
+.heartsound-parameter-metric-card:focus-visible .heartsound-parameter-tooltip,
+.parameter-cycle-heart-rate:hover .heartsound-parameter-tooltip,
+.parameter-cycle-heart-rate:focus-visible .heartsound-parameter-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.parameter-cycle-heart-rate-tooltip {
+  left: auto;
+  right: 0;
+  transform: translateY(6px);
+}
+
+.parameter-cycle-heart-rate-tooltip::after {
+  left: auto;
+  right: 18px;
+  transform: rotate(45deg);
+}
+
+.parameter-cycle-heart-rate:hover .parameter-cycle-heart-rate-tooltip,
+.parameter-cycle-heart-rate:focus-visible .parameter-cycle-heart-rate-tooltip {
+  transform: translateY(0);
+}
+
+.heartsound-parameter-tooltip-title {
+  font-size: 12px;
+  line-height: 1.25;
+  font-weight: 800;
+  color: #f0f6fc;
+  letter-spacing: 0.02em;
+}
+
+.heartsound-parameter-tooltip-summary {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #c9d1d9;
+}
+
+.heartsound-parameter-tooltip-schematic {
+  font-family: "SFMono-Regular", SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #79c0ff;
+  white-space: pre-wrap;
 }
 
 .parameter-group-card {
@@ -957,6 +1289,12 @@ body {
   color: #f0f6fc;
 }
 
+.parameter-group-description {
+  font-size: 11px;
+  line-height: 1.4;
+  color: #8b949e;
+}
+
 .parameter-metric-list {
   display: grid;
   gap: 7px;
@@ -964,7 +1302,7 @@ body {
 
 .parameter-metric-row {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) 60px;
+  grid-template-columns: minmax(164px, 1fr) minmax(72px, auto);
   gap: 8px;
   align-items: center;
 }
@@ -977,35 +1315,54 @@ body {
 .parameter-metric-label {
   color: #c9d1d9;
   display: grid;
-  gap: 2px;
+  gap: 4px;
   word-break: break-word;
+}
+
+.parameter-metric-label-main {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
 }
 
 .parameter-metric-unit {
   font-size: 10px;
-  color: #8b949e;
+  color: #c9d1d9;
   line-height: 1.2;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(121, 192, 255, 0.28);
+  background: rgba(121, 192, 255, 0.12);
+  white-space: nowrap;
+}
+
+.parameter-metric-description {
+  font-size: 10px;
+  line-height: 1.35;
+  color: #8b949e;
 }
 
 .parameter-metric-value {
   color: #79c0ff;
   text-align: right;
   font-variant-numeric: tabular-nums;
+  display: grid;
+  justify-items: end;
+  gap: 2px;
 }
 
-.parameter-metric-meter {
-  height: 8px;
-  border-radius: 999px;
-  background: #161b22;
-  overflow: hidden;
-  position: relative;
+.parameter-metric-value-label,
+.parameter-metric-range-label {
+  font-size: 10px;
+  color: #8b949e;
 }
 
-.parameter-metric-meter-fill {
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, #1f6feb 0%, #79c0ff 100%);
+.parameter-metric-value-number {
+  color: #79c0ff;
 }
+
 
 .auth-shell {
   min-height: 100vh;
@@ -1342,6 +1699,11 @@ body {
   font-weight: 600;
 }
 
+.series-modal-item-all {
+  margin-bottom: 10px;
+  border-color: rgba(121, 192, 255, 0.34);
+}
+
 .danger-action {
   border: 1px solid #f85149;
   border-radius: 8px;
@@ -1396,6 +1758,10 @@ body {
   }
 
   .parameter-group-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .heartsound-parameter-layout {
     grid-template-columns: minmax(0, 1fr);
   }
 

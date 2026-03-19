@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
 import type { EChartsOption } from "echarts";
@@ -21,6 +22,8 @@ type SeriesKey =
   | "amplitude"
   | "s1Area"
   | "s2Area"
+  | "s3Candidates"
+  | "s4Candidates"
   | "s1Start"
   | "s1End"
   | "s2Start"
@@ -39,6 +42,8 @@ interface VisibleSeries {
   amplitude: boolean;
   s1Area: boolean;
   s2Area: boolean;
+  s3Candidates: boolean;
+  s4Candidates: boolean;
   s1Start: boolean;
   s1End: boolean;
   s2Start: boolean;
@@ -143,6 +148,8 @@ interface PanelPlotState {
 interface ParameterMetricSummary {
   key: string;
   label: string;
+  description?: string | null;
+  unit?: string | null;
   mean: number;
   min: number;
   max: number;
@@ -151,6 +158,7 @@ interface ParameterMetricSummary {
 interface ParameterSummaryGroup {
   key: string;
   label: string;
+  description?: string | null;
   metrics: ParameterMetricSummary[];
 }
 
@@ -159,6 +167,15 @@ interface ParameterSummaryCycle {
   startIndex: number;
   endIndex: number;
   groups: ParameterSummaryGroup[];
+}
+
+interface HeartsoundParameterSection {
+  key: string;
+  title: string;
+  subtitle: string;
+  toneClassName: string;
+  groups: ParameterSummaryGroup[];
+  metrics: ParameterMetricSummary[];
 }
 
 interface ParameterSummaryPayload {
@@ -175,6 +192,7 @@ interface ParameterSummaryPayload {
 interface PanelParameterState {
   summary: ParameterSummaryPayload | null;
   selectedCycleIndex: number | null;
+  selectedMetricKey: string | null;
   loading: boolean;
   error: string | null;
 }
@@ -229,6 +247,12 @@ interface AuthState {
   isAdmin: boolean;
 }
 
+interface HeartsoundCandidateSettings {
+  s3DeltaThresholdRatio: number;
+  s4DeltaThresholdRatio: number;
+  s3S4MinGapMs: number;
+}
+
 interface AppState {
   splitMode: SplitMode;
   activePanelId: PanelId;
@@ -240,6 +264,7 @@ interface AppState {
   filesByWorkspace: Record<WorkspaceKind, UploadedFileMetadata[]>;
   filesLoadingByWorkspace: Record<WorkspaceKind, boolean>;
   uploadingByWorkspace: Record<WorkspaceKind, boolean>;
+  heartsoundCandidateSettings: HeartsoundCandidateSettings;
   searchText: string;
   statusMessage: string;
   selectedDeleteIds: string[];
@@ -251,6 +276,7 @@ interface PanelCardProps {
   plotState: PanelPlotState;
   parameterState: PanelParameterState;
   unsupervisedState: PanelUnsupervisedState;
+  heartsoundCandidateSettings: HeartsoundCandidateSettings;
   isActive: boolean;
   onActivate: (panelId: PanelId) => void;
   onToggleParameterSummary: (panelId: PanelId) => void;
@@ -269,18 +295,42 @@ interface PanelCardProps {
   ) => void;
   onPrefetchRange: (panelId: PanelId, start: number, end: number) => void;
   onSelectCycle: (panelId: PanelId, cycleIndex: number) => void;
+  onSelectParameterMetric: (panelId: PanelId, metricKey: string) => void;
 }
 
 type DataPair = [number, number];
 
 interface HeartsoundRegionOverlay {
-  label: "S1" | "S2";
+  label: "S1" | "S2" | "S3" | "S4";
   startPeak: DataPair;
   endPeak: DataPair;
   areaStart: number;
   areaEnd: number;
+  centerIndex?: number;
+  peakPoint?: DataPair;
   fillColor: string;
   borderColor: string;
+}
+
+interface HeartsoundCycleMeasurementContext {
+  s1Overlay: HeartsoundRegionOverlay | null;
+  s2Overlay: HeartsoundRegionOverlay | null;
+  nextS1Overlay: HeartsoundRegionOverlay | null;
+}
+
+interface ParameterMeasurementAnnotation {
+  key: string;
+  label: string;
+  color: string;
+  kind: "range" | "point";
+  startIndex: number;
+  endIndex: number;
+}
+
+interface HeartsoundParameterTooltipContent {
+  title: string;
+  summary: string;
+  schematic: string;
 }
 
 const PANEL_IDS_BY_MODE: Record<SplitMode, PanelId[]> = {
@@ -306,6 +356,20 @@ const HEARTSOUND_SERIES_ITEMS: SeriesDescriptor[] = [
     color: "rgba(248, 81, 73, 0.38)",
     fillColor: "rgba(248, 81, 73, 0.13)",
     borderColor: "rgba(248, 81, 73, 0.38)"
+  },
+  {
+    key: "s3Candidates",
+    label: "Show S3 Candidates",
+    color: "rgba(255, 230, 0, 0.99)",
+    fillColor: "rgba(255, 230, 0, 0.40)",
+    borderColor: "rgba(255, 230, 0, 0.98)"
+  },
+  {
+    key: "s4Candidates",
+    label: "Show S4 Candidates",
+    color: "rgba(0, 245, 255, 0.99)",
+    fillColor: "rgba(0, 245, 255, 0.34)",
+    borderColor: "rgba(0, 245, 255, 0.96)"
   },
   { key: "s1Start", label: "S1-Start_RS_Score", color: "#2ea043" },
   { key: "s1End", label: "S1-End_RS_Score", color: "#d29922" },
@@ -350,6 +414,8 @@ const DEFAULT_VISIBLE_SERIES: VisibleSeries = {
   amplitude: true,
   s1Area: true,
   s2Area: true,
+  s3Candidates: true,
+  s4Candidates: true,
   s1Start: false,
   s1End: false,
   s2Start: false,
@@ -375,6 +441,13 @@ const FILE_ROLE_TABS: Array<{ key: FileRole; label: string }> = [
   { key: "parameter", label: "Parameter" },
   { key: "unsupervised", label: "Unsupervised" }
 ];
+
+const getAvailableFileRoleTabs = (
+  workspaceKind: WorkspaceKind
+): Array<{ key: FileRole; label: string }> =>
+  workspaceKind === "heartsound"
+    ? FILE_ROLE_TABS.filter((tab) => tab.key !== "parameter")
+    : FILE_ROLE_TABS;
 const FILE_NAME_COLLATOR = new Intl.Collator(undefined, {
   numeric: true,
   sensitivity: "base"
@@ -414,6 +487,7 @@ const createEmptyPlotState = (): PanelPlotState => ({
 const createEmptyParameterState = (): PanelParameterState => ({
   summary: null,
   selectedCycleIndex: null,
+  selectedMetricKey: null,
   loading: false,
   error: null
 });
@@ -456,11 +530,48 @@ const MIN_CHART_SECTION_HEIGHT = 220;
 const MIN_PARAMETER_SECTION_HEIGHT = 160;
 const PLAYHEAD_HANDLE_TOP = 21;
 const PLAYHEAD_PIXEL_OFFSET = 0.5;
+const SEARCH_COMMAND_PREFIX = "/search";
 const AUTO_ADVANCE_PREFETCH_RATIO = 0.12;
 const AUTO_ADVANCE_PREFETCH_MIN_ROWS = 240;
+const KEYBOARD_RANGE_COMMIT_DEBOUNCE_MS = 180;
+const HEARTSOUND_CANDIDATE_SAMPLE_RATE_FALLBACK = 8000;
+const HEARTSOUND_CANDIDATE_MIN_WINDOW_MULTIPLIER = 2;
 const QUICK_RANGE_SHIFT_STEP = 30000;
 const ECG_RANGE_SHIFT_STEP = 200;
 const KEYBOARD_RANGE_SHIFT_STEP = 3000;
+
+const DEFAULT_HEARTSOUND_CANDIDATE_SETTINGS: HeartsoundCandidateSettings = {
+  s3DeltaThresholdRatio: 0.10,
+  s4DeltaThresholdRatio: 0.10,
+  s3S4MinGapMs: 120
+};
+
+const HEARTSOUND_CANDIDATE_CONFIG = {
+  fallbackSampleRate: HEARTSOUND_CANDIDATE_SAMPLE_RATE_FALLBACK,
+  smoothingWindowMs: 12,
+  minDurationMs: 18,
+  mergeDistanceMs: 20,
+  noiseStdMultiplier: 2.4,
+  minimumAbsoluteThreshold: 1e-4,
+  s3: {
+    label: "S3" as const,
+    offsetStartMs: 120,
+    offsetEndMs: 200,
+    fallbackStartRatio: 0.18,
+    fallbackEndRatio: 0.34,
+    fillColor: "rgba(255, 77, 79, 0)",
+    borderColor: "rgba(255, 77, 79, 0.98)"
+  },
+  s4: {
+    label: "S4" as const,
+    offsetStartMs: 200,
+    offsetEndMs: 80,
+    fallbackStartRatio: 0.72,
+    fallbackEndRatio: 0.88,
+    fillColor: "rgba(255, 77, 79, 0)",
+    borderColor: "rgba(255, 77, 79, 0.98)"
+  }
+};
 const QUICK_RANGE_PRESETS = [15000, 30000, 50000] as const;
 const WORKSPACE_TABS: Array<{ key: WorkspaceKind; label: string; title: string; emptyLabel: string }> = [
   {
@@ -516,6 +627,7 @@ const createAppState = (): AppState => ({
     heartsound: false,
     ecg: false
   },
+  heartsoundCandidateSettings: { ...DEFAULT_HEARTSOUND_CANDIDATE_SETTINGS },
   searchText: "",
   statusMessage: "",
   selectedDeleteIds: []
@@ -630,6 +742,682 @@ const buildHeartsoundRegionOverlays = (
   return overlays;
 };
 
+const getHeartsoundRegionOverlayScore = (overlay: HeartsoundRegionOverlay): number =>
+  Math.max(overlay.startPeak[1] ?? 0, overlay.endPeak[1] ?? 0);
+
+const overlapsHeartsoundRegionOverlay = (
+  left: HeartsoundRegionOverlay,
+  right: HeartsoundRegionOverlay
+): boolean => left.areaStart <= right.areaEnd && right.areaStart <= left.areaEnd;
+
+const resolveOverlappingHeartsoundRegionOverlays = (
+  s1Overlays: HeartsoundRegionOverlay[],
+  s2Overlays: HeartsoundRegionOverlay[]
+): { s1Overlays: HeartsoundRegionOverlay[]; s2Overlays: HeartsoundRegionOverlay[] } => {
+  const orderedOverlays = [...s1Overlays, ...s2Overlays].sort((left, right) => {
+    if (left.areaStart !== right.areaStart) {
+      return left.areaStart - right.areaStart;
+    }
+    return getHeartsoundRegionOverlayScore(right) - getHeartsoundRegionOverlayScore(left);
+  });
+
+  const resolvedOverlays: HeartsoundRegionOverlay[] = [];
+  for (const overlay of orderedOverlays) {
+    const previous = resolvedOverlays[resolvedOverlays.length - 1];
+    if (!previous || previous.label === overlay.label || !overlapsHeartsoundRegionOverlay(previous, overlay)) {
+      resolvedOverlays.push(overlay);
+      continue;
+    }
+
+    if (getHeartsoundRegionOverlayScore(overlay) > getHeartsoundRegionOverlayScore(previous)) {
+      resolvedOverlays[resolvedOverlays.length - 1] = overlay;
+    }
+  }
+
+  return {
+    s1Overlays: resolvedOverlays.filter((overlay) => overlay.label === "S1"),
+    s2Overlays: resolvedOverlays.filter((overlay) => overlay.label === "S2")
+  };
+};
+
+const msToSampleCount = (durationMs: number, sampleRate: number): number =>
+  Math.max(1, Math.round((durationMs / 1000) * sampleRate));
+
+const estimatePointStep = (xValues: number[]): number => {
+  if (xValues.length < 2) {
+    return 1;
+  }
+
+  const diffs: number[] = [];
+  for (let index = 1; index < xValues.length; index += 1) {
+    const diff = xValues[index] - xValues[index - 1];
+    if (Number.isFinite(diff) && diff > 0) {
+      diffs.push(diff);
+    }
+  }
+
+  if (diffs.length === 0) {
+    return 1;
+  }
+
+  diffs.sort((left, right) => left - right);
+  return Math.max(1, Math.round(diffs[Math.floor(diffs.length / 2)] ?? 1));
+};
+
+const sampleValues = (values: number[], maxSamples = 4096): number[] => {
+  if (values.length <= maxSamples) {
+    return values.slice();
+  }
+
+  const step = Math.max(1, Math.floor(values.length / maxSamples));
+  const sampled: number[] = [];
+  for (let index = 0; index < values.length; index += step) {
+    sampled.push(values[index]);
+  }
+  return sampled;
+};
+
+const getPercentile = (values: number[], percentile: number): number => {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const sorted = values
+    .filter((value) => Number.isFinite(value))
+    .slice()
+    .sort((left, right) => left - right);
+  if (sorted.length === 0) {
+    return 0;
+  }
+
+  const safePercentile = clampNumber(percentile, 0, 1);
+  const position = (sorted.length - 1) * safePercentile;
+  const lowerIndex = Math.floor(position);
+  const upperIndex = Math.ceil(position);
+  const lowerValue = sorted[lowerIndex] ?? sorted[sorted.length - 1];
+  const upperValue = sorted[upperIndex] ?? lowerValue;
+  if (lowerIndex === upperIndex) {
+    return lowerValue;
+  }
+
+  const ratio = position - lowerIndex;
+  return lowerValue + (upperValue - lowerValue) * ratio;
+};
+
+const getMean = (values: number[]): number => {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  let total = 0;
+  let count = 0;
+  for (const value of values) {
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    total += value;
+    count += 1;
+  }
+
+  return count > 0 ? total / count : 0;
+};
+
+const getStandardDeviation = (values: number[]): number => {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const mean = getMean(values);
+  let total = 0;
+  let count = 0;
+  for (const value of values) {
+    if (!Number.isFinite(value)) {
+      continue;
+    }
+    total += (value - mean) ** 2;
+    count += 1;
+  }
+
+  return count > 0 ? Math.sqrt(total / count) : 0;
+};
+
+const smoothAbsoluteAmplitude = (values: number[], radiusPoints: number): number[] => {
+  if (values.length === 0) {
+    return [];
+  }
+
+  const safeRadius = Math.max(1, radiusPoints);
+  const prefix: number[] = new Array(values.length + 1).fill(0);
+  for (let index = 0; index < values.length; index += 1) {
+    prefix[index + 1] = prefix[index] + Math.abs(values[index] ?? 0);
+  }
+
+  return values.map((_value, index) => {
+    const start = Math.max(0, index - safeRadius);
+    const end = Math.min(values.length - 1, index + safeRadius);
+    const sum = prefix[end + 1] - prefix[start];
+    const width = end - start + 1;
+    return width > 0 ? sum / width : 0;
+  });
+};
+
+const findIndexAtOrAfter = (xValues: number[], target: number): number | null => {
+  let left = 0;
+  let right = xValues.length - 1;
+  let result: number | null = null;
+
+  while (left <= right) {
+    const middle = Math.floor((left + right) / 2);
+    const value = xValues[middle];
+    if (value >= target) {
+      result = middle;
+      right = middle - 1;
+    } else {
+      left = middle + 1;
+    }
+  }
+
+  return result;
+};
+
+const findIndexAtOrBefore = (xValues: number[], target: number): number | null => {
+  let left = 0;
+  let right = xValues.length - 1;
+  let result: number | null = null;
+
+  while (left <= right) {
+    const middle = Math.floor((left + right) / 2);
+    const value = xValues[middle];
+    if (value <= target) {
+      result = middle;
+      left = middle + 1;
+    } else {
+      right = middle - 1;
+    }
+  }
+
+  return result;
+};
+
+const getRobustAmplitudeScale = (amplitudeValues: number[]): number => {
+  const sampledAbsValues = sampleValues(amplitudeValues.map((value) => Math.abs(value)));
+  const p50 = getPercentile(sampledAbsValues, 0.5);
+  const p90 = getPercentile(sampledAbsValues, 0.9);
+  return Math.max(p90 - p50, HEARTSOUND_CANDIDATE_CONFIG.minimumAbsoluteThreshold);
+};
+
+const resolveHeartsoundSampleRate = (
+  rowCount: number | null,
+  durationSeconds: number | null,
+  fallbackSampleRate: number
+): number => {
+  if (
+    rowCount !== null &&
+    rowCount > 0 &&
+    durationSeconds !== null &&
+    Number.isFinite(durationSeconds) &&
+    durationSeconds > 0
+  ) {
+    return Math.max(1, Math.round(rowCount / durationSeconds));
+  }
+
+  return fallbackSampleRate;
+};
+
+const resolveDiastolicCandidateWindow = (
+  candidateKind: "S3" | "S4",
+  diastoleStart: number,
+  diastoleEnd: number,
+  currentS2End: number,
+  nextS1Start: number,
+  sampleRate: number
+): { start: number; end: number } | null => {
+  if (diastoleEnd <= diastoleStart) {
+    return null;
+  }
+
+  const diastolicLength = diastoleEnd - diastoleStart;
+  const minimumWindowLength = msToSampleCount(
+    HEARTSOUND_CANDIDATE_CONFIG.minDurationMs * HEARTSOUND_CANDIDATE_MIN_WINDOW_MULTIPLIER,
+    sampleRate
+  );
+  const config =
+    candidateKind === "S3" ? HEARTSOUND_CANDIDATE_CONFIG.s3 : HEARTSOUND_CANDIDATE_CONFIG.s4;
+
+  const defaultWindow =
+    candidateKind === "S3"
+      ? {
+          start: currentS2End + msToSampleCount(config.offsetStartMs, sampleRate),
+          end: currentS2End + msToSampleCount(config.offsetEndMs, sampleRate)
+        }
+      : {
+          start: nextS1Start - msToSampleCount(config.offsetStartMs, sampleRate),
+          end: nextS1Start - msToSampleCount(config.offsetEndMs, sampleRate)
+        };
+
+  const clippedDefaultStart = clampNumber(defaultWindow.start, diastoleStart, diastoleEnd);
+  const clippedDefaultEnd = clampNumber(defaultWindow.end, clippedDefaultStart, diastoleEnd);
+  if (clippedDefaultEnd - clippedDefaultStart >= minimumWindowLength) {
+    return {
+      start: clippedDefaultStart,
+      end: clippedDefaultEnd
+    };
+  }
+
+  const fallbackStart = diastoleStart + Math.floor(diastolicLength * config.fallbackStartRatio);
+  const fallbackEnd = diastoleStart + Math.floor(diastolicLength * config.fallbackEndRatio);
+  const clippedFallbackStart = clampNumber(fallbackStart, diastoleStart, diastoleEnd);
+  const clippedFallbackEnd = clampNumber(fallbackEnd, clippedFallbackStart, diastoleEnd);
+  if (clippedFallbackEnd - clippedFallbackStart < minimumWindowLength) {
+    return null;
+  }
+
+  return {
+    start: clippedFallbackStart,
+    end: clippedFallbackEnd
+  };
+};
+
+const detectHeartsoundCandidateInWindow = (
+  candidateKind: "S3" | "S4",
+  xValues: number[],
+  amplitudeValues: number[],
+  diastolicStart: number,
+  diastolicEnd: number,
+  windowStart: number,
+  windowEnd: number,
+  sampleRate: number,
+  globalAmplitudeScale: number,
+  settings: HeartsoundCandidateSettings
+): HeartsoundRegionOverlay | null => {
+  const diastolicStartIndex = findIndexAtOrAfter(xValues, diastolicStart);
+  const diastolicEndIndex = findIndexAtOrBefore(xValues, diastolicEnd);
+  const startIndex = findIndexAtOrAfter(xValues, windowStart);
+  const endIndex = findIndexAtOrBefore(xValues, windowEnd);
+  if (
+    diastolicStartIndex === null ||
+    diastolicEndIndex === null ||
+    diastolicEndIndex <= diastolicStartIndex ||
+    startIndex === null ||
+    endIndex === null ||
+    endIndex <= startIndex
+  ) {
+    return null;
+  }
+
+  const diastolicAmplitude = amplitudeValues.slice(diastolicStartIndex, diastolicEndIndex + 1);
+  const xWindow = xValues.slice(startIndex, endIndex + 1);
+  const amplitudeWindow = amplitudeValues.slice(startIndex, endIndex + 1);
+  if (diastolicAmplitude.length < 3 || xWindow.length < 3 || amplitudeWindow.length < 3) {
+    return null;
+  }
+
+  const diastolicXWindow = xValues.slice(diastolicStartIndex, diastolicEndIndex + 1);
+  const pointStep = estimatePointStep(diastolicXWindow);
+  const smoothingRadiusPoints = Math.max(
+    1,
+    Math.round(msToSampleCount(HEARTSOUND_CANDIDATE_CONFIG.smoothingWindowMs, sampleRate) / pointStep)
+  );
+  const mergeDistancePoints = Math.max(
+    1,
+    Math.round(msToSampleCount(HEARTSOUND_CANDIDATE_CONFIG.mergeDistanceMs, sampleRate) / pointStep)
+  );
+  const minimumDurationSamples = msToSampleCount(HEARTSOUND_CANDIDATE_CONFIG.minDurationMs, sampleRate);
+  const smoothedDiastolicEnvelope = smoothAbsoluteAmplitude(diastolicAmplitude, smoothingRadiusPoints);
+  const localBaseline = getPercentile(sampleValues(smoothedDiastolicEnvelope), 0.3);
+  const diastolicDeviations = smoothedDiastolicEnvelope.map((value) => Math.max(0, value - localBaseline));
+  const localNoiseStd = getStandardDeviation(diastolicDeviations);
+  const windowOffset = startIndex - diastolicStartIndex;
+  const smoothedEnvelope = smoothedDiastolicEnvelope.slice(
+    windowOffset,
+    windowOffset + amplitudeWindow.length
+  );
+  const deviations = smoothedEnvelope.map((value) => Math.max(0, value - localBaseline));
+  const deltaThresholdRatio =
+    candidateKind === "S3"
+      ? settings.s3DeltaThresholdRatio
+      : settings.s4DeltaThresholdRatio;
+  const threshold = Math.max(
+    globalAmplitudeScale * deltaThresholdRatio,
+    localNoiseStd * HEARTSOUND_CANDIDATE_CONFIG.noiseStdMultiplier,
+    HEARTSOUND_CANDIDATE_CONFIG.minimumAbsoluteThreshold
+  );
+
+  const segments: Array<{ startIndex: number; endIndex: number }> = [];
+  let activeSegmentStart: number | null = null;
+
+  for (let index = 0; index < deviations.length; index += 1) {
+    if (deviations[index] >= threshold) {
+      if (activeSegmentStart === null) {
+        activeSegmentStart = index;
+      }
+      continue;
+    }
+
+    if (activeSegmentStart !== null) {
+      segments.push({ startIndex: activeSegmentStart, endIndex: index - 1 });
+      activeSegmentStart = null;
+    }
+  }
+
+  if (activeSegmentStart !== null) {
+    segments.push({ startIndex: activeSegmentStart, endIndex: deviations.length - 1 });
+  }
+
+  if (segments.length === 0) {
+    return null;
+  }
+
+  const mergedSegments: Array<{ startIndex: number; endIndex: number }> = [];
+  for (const segment of segments) {
+    const previous = mergedSegments[mergedSegments.length - 1];
+    if (previous && segment.startIndex - previous.endIndex <= mergeDistancePoints) {
+      previous.endIndex = segment.endIndex;
+      continue;
+    }
+    mergedSegments.push({ ...segment });
+  }
+
+  let strongestCandidate: HeartsoundRegionOverlay | null = null;
+  let strongestScore = Number.NEGATIVE_INFINITY;
+
+  for (const segment of mergedSegments) {
+    const startX = xWindow[segment.startIndex];
+    const endX = xWindow[segment.endIndex];
+    if (endX - startX < minimumDurationSamples) {
+      continue;
+    }
+
+    let localPeakIndex = segment.startIndex;
+    let localPeakScore = deviations[segment.startIndex] ?? 0;
+    for (let index = segment.startIndex + 1; index <= segment.endIndex; index += 1) {
+      const score = deviations[index] ?? 0;
+      if (score > localPeakScore) {
+        localPeakScore = score;
+        localPeakIndex = index;
+      }
+    }
+
+    if (localPeakScore <= strongestScore) {
+      continue;
+    }
+
+    const config =
+      candidateKind === "S3" ? HEARTSOUND_CANDIDATE_CONFIG.s3 : HEARTSOUND_CANDIDATE_CONFIG.s4;
+    strongestScore = localPeakScore;
+    strongestCandidate = {
+      label: config.label,
+      startPeak: [xWindow[segment.startIndex], amplitudeWindow[segment.startIndex] ?? 0],
+      endPeak: [xWindow[segment.endIndex], amplitudeWindow[segment.endIndex] ?? 0],
+      areaStart: startX,
+      areaEnd: endX,
+      centerIndex: xWindow[localPeakIndex],
+      peakPoint: [xWindow[localPeakIndex], amplitudeWindow[localPeakIndex] ?? 0],
+      fillColor: config.fillColor,
+      borderColor: config.borderColor
+    };
+  }
+
+  return strongestCandidate;
+};
+
+const retagHeartsoundCandidateOverlay = (
+  overlay: HeartsoundRegionOverlay,
+  candidateKind: "S3" | "S4"
+): HeartsoundRegionOverlay => {
+  const config =
+    candidateKind === "S3" ? HEARTSOUND_CANDIDATE_CONFIG.s3 : HEARTSOUND_CANDIDATE_CONFIG.s4;
+
+  return {
+    ...overlay,
+    label: config.label,
+    fillColor: config.fillColor,
+    borderColor: config.borderColor
+  };
+};
+
+const normalizeHeartsoundCandidateOrdering = (
+  s3Candidate: HeartsoundRegionOverlay | null,
+  s4Candidate: HeartsoundRegionOverlay | null,
+  diastoleStart: number,
+  diastoleEnd: number
+): { s3Candidate: HeartsoundRegionOverlay | null; s4Candidate: HeartsoundRegionOverlay | null } => {
+  const diastoleMidpoint = diastoleStart + (diastoleEnd - diastoleStart) / 2;
+  const s3Center = s3Candidate?.centerIndex ?? null;
+  const s4Center = s4Candidate?.centerIndex ?? null;
+
+  // Keep the final labels tied to time ordering within diastole:
+  // S3 should stay in the early half, S4 in the late half.
+  if (s3Candidate && s3Center !== null && s3Center > diastoleMidpoint) {
+    if (!s4Candidate) {
+      s4Candidate = retagHeartsoundCandidateOverlay(s3Candidate, "S4");
+    }
+    s3Candidate = null;
+  }
+
+  if (s4Candidate && s4Center !== null && s4Center < diastoleMidpoint) {
+    if (!s3Candidate) {
+      s3Candidate = retagHeartsoundCandidateOverlay(s4Candidate, "S3");
+    }
+    s4Candidate = null;
+  }
+
+  if (
+    s3Candidate &&
+    s4Candidate &&
+    s3Candidate.centerIndex !== undefined &&
+    s4Candidate.centerIndex !== undefined &&
+    s3Candidate.centerIndex > s4Candidate.centerIndex
+  ) {
+    const previousS3Candidate = s3Candidate;
+    s3Candidate = retagHeartsoundCandidateOverlay(s4Candidate, "S3");
+    s4Candidate = retagHeartsoundCandidateOverlay(previousS3Candidate, "S4");
+  }
+
+  return { s3Candidate, s4Candidate };
+};
+
+// Build S3/S4 candidate overlays from S2_end -> next_S1_start using fixed early/late
+// diastolic windows plus ratio fallback. This keeps the logic tied to the user's
+// intended "S3 right after S2" and "S4 right before S1" definition.
+const buildHeartsoundCandidateOverlays = (
+  amplitudePairs: DataPair[],
+  s1RegionOverlays: HeartsoundRegionOverlay[],
+  s2RegionOverlays: HeartsoundRegionOverlay[],
+  sampleRate: number,
+  settings: HeartsoundCandidateSettings
+): { s3Candidates: HeartsoundRegionOverlay[]; s4Candidates: HeartsoundRegionOverlay[] } => {
+  if (amplitudePairs.length < 3 || s1RegionOverlays.length === 0 || s2RegionOverlays.length === 0) {
+    return { s3Candidates: [], s4Candidates: [] };
+  }
+
+  const xValues = amplitudePairs.map((pair) => pair[0]);
+  const amplitudeValues = amplitudePairs.map((pair) => pair[1]);
+  const globalAmplitudeScale = getRobustAmplitudeScale(amplitudeValues);
+  const minimumS3S4GapSamples = msToSampleCount(settings.s3S4MinGapMs, sampleRate);
+  const sortedS1Overlays = s1RegionOverlays.slice().sort((left, right) => left.areaStart - right.areaStart);
+  const sortedS2Overlays = s2RegionOverlays.slice().sort((left, right) => left.areaStart - right.areaStart);
+  const s3Candidates: HeartsoundRegionOverlay[] = [];
+  const s4Candidates: HeartsoundRegionOverlay[] = [];
+
+  let nextS1Index = 0;
+  for (const s2Overlay of sortedS2Overlays) {
+    while (
+      nextS1Index < sortedS1Overlays.length &&
+      sortedS1Overlays[nextS1Index].areaStart <= s2Overlay.areaEnd
+    ) {
+      nextS1Index += 1;
+    }
+
+    const nextS1Overlay = sortedS1Overlays[nextS1Index];
+    if (!nextS1Overlay) {
+      break;
+    }
+
+    const diastoleStart = s2Overlay.areaEnd + 1;
+    const diastoleEnd = nextS1Overlay.areaStart - 1;
+    if (diastoleEnd <= diastoleStart) {
+      continue;
+    }
+
+    const s3Window = resolveDiastolicCandidateWindow(
+      "S3",
+      diastoleStart,
+      diastoleEnd,
+      s2Overlay.areaEnd,
+      nextS1Overlay.areaStart,
+      sampleRate
+    );
+    const s4Window = resolveDiastolicCandidateWindow(
+      "S4",
+      diastoleStart,
+      diastoleEnd,
+      s2Overlay.areaEnd,
+      nextS1Overlay.areaStart,
+      sampleRate
+    );
+
+    let s3Candidate =
+      s3Window
+        ? detectHeartsoundCandidateInWindow(
+            "S3",
+            xValues,
+            amplitudeValues,
+            diastoleStart,
+            diastoleEnd,
+            s3Window.start,
+            s3Window.end,
+            sampleRate,
+            globalAmplitudeScale,
+            settings
+          )
+        : null;
+    let s4Candidate =
+      s4Window
+        ? detectHeartsoundCandidateInWindow(
+            "S4",
+            xValues,
+            amplitudeValues,
+            diastoleStart,
+            diastoleEnd,
+            s4Window.start,
+            s4Window.end,
+            sampleRate,
+            globalAmplitudeScale,
+            settings
+          )
+        : null;
+
+    const normalizedCandidates = normalizeHeartsoundCandidateOrdering(
+      s3Candidate,
+      s4Candidate,
+      diastoleStart,
+      diastoleEnd
+    );
+    s3Candidate = normalizedCandidates.s3Candidate;
+    s4Candidate = normalizedCandidates.s4Candidate;
+
+    if (
+      s3Candidate &&
+      s4Candidate &&
+      s3Candidate.centerIndex !== undefined &&
+      s4Candidate.centerIndex !== undefined &&
+      Math.abs(s4Candidate.centerIndex - s3Candidate.centerIndex) < minimumS3S4GapSamples
+    ) {
+      const s3Width = Math.abs((s3Candidate.areaEnd - s3Candidate.areaStart) || 1);
+      const s4Width = Math.abs((s4Candidate.areaEnd - s4Candidate.areaStart) || 1);
+      const s3Strength = Math.abs((s3Candidate.peakPoint?.[1] ?? 0) - (s3Candidate.startPeak[1] ?? 0)) * s3Width;
+      const s4Strength = Math.abs((s4Candidate.peakPoint?.[1] ?? 0) - (s4Candidate.startPeak[1] ?? 0)) * s4Width;
+      if (s3Strength >= s4Strength) {
+        s4Candidate = null;
+      } else {
+        s3Candidate = null;
+      }
+    }
+
+    if (s3Candidate) {
+      s3Candidates.push(s3Candidate);
+    }
+    if (s4Candidate) {
+      s4Candidates.push(s4Candidate);
+    }
+  }
+
+  return { s3Candidates, s4Candidates };
+};
+
+const formatHeartsoundCandidateSettings = (settings: HeartsoundCandidateSettings): string =>
+  `S3=${settings.s3DeltaThresholdRatio.toFixed(3)} | S4=${settings.s4DeltaThresholdRatio.toFixed(3)} | Gap=${settings.s3S4MinGapMs}ms`;
+
+const tryApplyHeartsoundSearchCommand = (
+  rawInput: string,
+  currentSettings: HeartsoundCandidateSettings
+): { nextSettings: HeartsoundCandidateSettings; message: string } | null => {
+  const trimmed = rawInput.trim();
+  if (!trimmed.toLowerCase().startsWith(SEARCH_COMMAND_PREFIX)) {
+    return null;
+  }
+
+  const commandText = trimmed.slice(SEARCH_COMMAND_PREFIX.length).trim();
+  if (!commandText) {
+    return {
+      nextSettings: currentSettings,
+      message: `S3/S4 candidate settings | ${formatHeartsoundCandidateSettings(currentSettings)}`
+    };
+  }
+
+  if (commandText.toLowerCase() === "reset") {
+    return {
+      nextSettings: { ...DEFAULT_HEARTSOUND_CANDIDATE_SETTINGS },
+      message: `S3/S4 candidate settings reset | ${formatHeartsoundCandidateSettings(DEFAULT_HEARTSOUND_CANDIDATE_SETTINGS)}`
+    };
+  }
+
+  const nextSettings = { ...currentSettings };
+  const tokens = commandText.split(/\s+/).filter(Boolean);
+  for (const token of tokens) {
+    const [rawKey, rawValue] = token.split("=");
+    if (!rawKey || rawValue === undefined) {
+      return {
+        nextSettings: currentSettings,
+        message: "Use /search s3=0.08 s4=0.08 gap=120 or /search reset"
+      };
+    }
+
+    const value = Number(rawValue);
+    if (!Number.isFinite(value) || value <= 0) {
+      return {
+        nextSettings: currentSettings,
+        message: `Invalid /search value for ${rawKey}`
+      };
+    }
+
+    const key = rawKey.toLowerCase();
+    if (key === "s3" || key === "s3delta") {
+      nextSettings.s3DeltaThresholdRatio = clampNumber(value, 0.001, 10);
+      continue;
+    }
+    if (key === "s4" || key === "s4delta") {
+      nextSettings.s4DeltaThresholdRatio = clampNumber(value, 0.001, 10);
+      continue;
+    }
+    if (key === "gap" || key === "distance" || key === "gapms") {
+      nextSettings.s3S4MinGapMs = clampNumber(value, 1, 2000);
+      continue;
+    }
+
+    return {
+      nextSettings: currentSettings,
+      message: `Unknown /search key: ${rawKey}`
+    };
+  }
+
+  return {
+    nextSettings,
+    message: `Updated S3/S4 candidate settings | ${formatHeartsoundCandidateSettings(nextSettings)}`
+  };
+};
+
 const parseNumericInput = (value: string): number | null => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) {
@@ -716,24 +1504,377 @@ const formatMetricValue = (value: number): string => {
   return value.toFixed(2);
 };
 
-const getParameterMetricUnit = (workspaceKind: WorkspaceKind, metricKey: string): string | null => {
+const formatHeartsoundParameterMetricValue = (value: number): string => {
+  if (!Number.isFinite(value)) {
+    return "-";
+  }
+  return formatMetricValue(value);
+};
+
+const buildPairValueLookup = (pairs: DataPair[]): Map<number, number> => {
+  const lookup = new Map<number, number>();
+  for (const [index, value] of pairs) {
+    lookup.set(index, value);
+  }
+  return lookup;
+};
+
+const getLookupValue = (lookup: Map<number, number>, index: number | null | undefined): number | null => {
+  if (index === null || index === undefined) {
+    return null;
+  }
+  const value = lookup.get(index);
+  return value !== undefined && Number.isFinite(value) ? value : null;
+};
+
+const getAbsolutePeakIndexInRange = (
+  lookup: Map<number, number>,
+  startIndex: number,
+  endIndex: number
+): number | null => {
+  if (endIndex <= startIndex) {
+    return null;
+  }
+
+  let bestIndex: number | null = null;
+  let bestValue = -Infinity;
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const value = lookup.get(index);
+    if (value === undefined || !Number.isFinite(value)) {
+      continue;
+    }
+    const absoluteValue = Math.abs(value);
+    if (absoluteValue > bestValue) {
+      bestValue = absoluteValue;
+      bestIndex = index;
+    }
+  }
+
+  return bestIndex;
+};
+
+const getRsWidthBounds = (lookup: Map<number, number>, peakIndex: number | null | undefined): [number, number] | null => {
+  if (peakIndex === null || peakIndex === undefined) {
+    return null;
+  }
+
+  const peakValue = getLookupValue(lookup, peakIndex);
+  if (peakValue === null || peakValue <= 0) {
+    return null;
+  }
+
+  const threshold = peakValue * 0.5;
+  let left = peakIndex;
+  while (true) {
+    const nextValue = getLookupValue(lookup, left - 1);
+    if (nextValue === null || nextValue < threshold) {
+      break;
+    }
+    left -= 1;
+  }
+
+  let right = peakIndex;
+  while (true) {
+    const nextValue = getLookupValue(lookup, right + 1);
+    if (nextValue === null || nextValue < threshold) {
+      break;
+    }
+    right += 1;
+  }
+
+  return left <= right ? [left, right] : null;
+};
+
+const getHeartsoundParameterTooltipContent = (
+  metricKey: string,
+  metricLabel: string
+): HeartsoundParameterTooltipContent | null => {
+  if (metricKey === "HeartRate_bpm") {
+    return {
+      title: "HR",
+      summary: "현재 S1 start에서 다음 S1 start까지 측정",
+      schematic: "S1_n ~ S1_n+1",
+    };
+  }
+
+  if (/^S1_/.test(metricKey) || /^S2_/.test(metricKey)) {
+    const isS1 = metricKey.startsWith("S1_");
+    const prefix = isS1 ? "S1" : "S2";
+    if (/_Duration_ms$/.test(metricKey)) {
+      return {
+        title: metricLabel,
+        summary: `${prefix} start에서 ${prefix} end까지`,
+        schematic: `${prefix}_S ~ ${prefix}_E`,
+      };
+    }
+    if (/_Peak_mV$/.test(metricKey)) {
+      return {
+        title: metricLabel,
+        summary: `${prefix} 구간의 최대 |x|`,
+        schematic: `${prefix} segment -> |x| max`,
+      };
+    }
+    if (/_mean_mV$/.test(metricKey)) {
+      return {
+        title: metricLabel,
+        summary: `${prefix} 구간의 평균 |x|`,
+        schematic: `mean(|x[n]|) on ${prefix}`,
+      };
+    }
+    if (/_RMS_mV$/.test(metricKey)) {
+      return {
+        title: metricLabel,
+        summary: `${prefix} 구간의 RMS`,
+        schematic: `sqrt(mean(x[n]^2))`,
+      };
+    }
+    if (/_Area_mVms$/.test(metricKey)) {
+      return {
+        title: metricLabel,
+        summary: `${prefix} 구간의 |x| 적분값`,
+        schematic: `sum(|x[n]|) * 0.25`,
+      };
+    }
+    if (/_Middle_ms$/.test(metricKey)) {
+      return {
+        title: metricLabel,
+        summary: `${prefix} start와 end의 중간점`,
+        schematic: `(${prefix}_S + ${prefix}_E) / 2`,
+      };
+    }
+    if (/_S_centroid_pct$/.test(metricKey)) {
+      return {
+        title: metricLabel,
+        summary: `${prefix} 중심의 start 쪽 치우침`,
+        schematic: `${prefix}_S ~ centroid ~ middle`,
+      };
+    }
+    if (/_E_centroid_pct$/.test(metricKey)) {
+      return {
+        title: metricLabel,
+        summary: `${prefix} 중심의 end 쪽 치우침`,
+        schematic: `middle ~ centroid ~ ${prefix}_E`,
+      };
+    }
+  }
+
+  if (/^S1[SE]_RS_Peak$|^S2[SE]_RS_Peak$/.test(metricKey)) {
+    return {
+      title: metricLabel,
+      summary: "선택된 event peak 지점의 RS Score",
+      schematic: "event peak ~ RS(tau)",
+    };
+  }
+
+  if (/^S1[SE]_RS_Width_ms$|^S2[SE]_RS_Width_ms$/.test(metricKey)) {
+    return {
+      title: metricLabel,
+      summary: "peak 50% 높이 연속 구간 폭",
+      schematic: "left ~ peak ~ right",
+    };
+  }
+
+  if (/^S1[SE]_RS_STD$|^S2[SE]_RS_STD$/.test(metricKey)) {
+    return {
+      title: metricLabel,
+      summary: "peak 주변 +/-20 ms 가중 spread",
+      schematic: "[tau-20ms ... tau ... tau+20ms]",
+    };
+  }
+
+  switch (metricKey) {
+    case "S1_S_to_S2_S_ms":
+      return { title: metricLabel, summary: "S1 start에서 S2 start까지", schematic: "S1_S ~ S2_S" };
+    case "S1_E_to_S2_S_ms":
+      return { title: metricLabel, summary: "S1 end에서 S2 start까지", schematic: "S1_E ~ S2_S" };
+    case "S1_mid_to_S2_mid_ms":
+      return { title: metricLabel, summary: "S1 middle에서 S2 middle까지", schematic: "S1_mid ~ S2_mid" };
+    case "S1_E_to_S2_E_ms":
+      return { title: metricLabel, summary: "S1 end에서 S2 end까지", schematic: "S1_E ~ S2_E" };
+    case "S1_S_to_S2_E_ms":
+      return { title: metricLabel, summary: "S1 start에서 S2 end까지", schematic: "S1_S ~ S2_E" };
+    case "S1_peak_to_S2_peak_ms":
+      return { title: metricLabel, summary: "S1 peak에서 S2 peak까지", schematic: "S1_peak ~ S2_peak" };
+    default:
+      return null;
+  }
+};
+
+const getRsStdWindowBounds = (
+  peakIndex: number | null | undefined,
+  maxIndex: number
+): [number, number] | null => {
+  if (peakIndex === null || peakIndex === undefined || maxIndex < 0) {
+    return null;
+  }
+
+  const left = clampNumber(peakIndex - 80, 0, maxIndex);
+  const right = clampNumber(peakIndex + 80, left, maxIndex);
+  return left <= right ? [left, right] : null;
+};
+
+const buildParameterMeasurementAnnotation = (
+  metricKey: string,
+  cycleContext: HeartsoundCycleMeasurementContext,
+  amplitudeLookup: Map<number, number>,
+  rsLookups: {
+    s1Start: Map<number, number>;
+    s1End: Map<number, number>;
+    s2Start: Map<number, number>;
+    s2End: Map<number, number>;
+  },
+  maxIndex: number
+): ParameterMeasurementAnnotation | null => {
+  const { s1Overlay, s2Overlay, nextS1Overlay } = cycleContext;
+  if (!s1Overlay) {
+    return null;
+  }
+
+  const s1Start = s1Overlay.areaStart;
+  const s1End = s1Overlay.areaEnd;
+  const s2Start = s2Overlay?.areaStart ?? null;
+  const s2End = s2Overlay?.areaEnd ?? null;
+  const nextS1Start = nextS1Overlay?.areaStart ?? null;
+  const s1Mid = Math.round((s1Start + s1End) / 2);
+  const s2Mid = s2Start !== null && s2End !== null ? Math.round((s2Start + s2End) / 2) : null;
+  const s1Peak = getAbsolutePeakIndexInRange(amplitudeLookup, s1Start, s1End);
+  const s2Peak = s2Start !== null && s2End !== null ? getAbsolutePeakIndexInRange(amplitudeLookup, s2Start, s2End) : null;
+
+  const createRange = (label: string, color: string, startIndex: number | null, endIndex: number | null) => {
+    if (startIndex === null || endIndex === null) {
+      return null;
+    }
+    return {
+      key: metricKey,
+      label,
+      color,
+      kind: "range" as const,
+      startIndex,
+      endIndex,
+    };
+  };
+
+  const createPoint = (label: string, color: string, index: number | null | undefined) => {
+    if (index === null || index === undefined) {
+      return null;
+    }
+    return {
+      key: metricKey,
+      label,
+      color,
+      kind: "point" as const,
+      startIndex: index,
+      endIndex: index,
+    };
+  };
+
+  if (metricKey.startsWith("S1_")) {
+    return createRange("S1", "#9b5cff", s1Start, s1End);
+  }
+  if (metricKey.startsWith("S2_")) {
+    return createRange("S2", "#00c2a8", s2Start, s2End);
+  }
+
+  switch (metricKey) {
+    case "S1_S_to_S2_S_ms":
+      return createRange("S1 start -> S2 start", "#f97316", s1Start, s2Start);
+    case "S1_E_to_S2_S_ms":
+      return createRange("S1 end -> S2 start", "#f97316", s1End, s2Start);
+    case "S1_mid_to_S2_mid_ms":
+      return createRange("S1 middle -> S2 middle", "#f97316", s1Mid, s2Mid);
+    case "S1_E_to_S2_E_ms":
+      return createRange("S1 end -> S2 end", "#f97316", s1End, s2End);
+    case "S1_S_to_S2_E_ms":
+      return createRange("S1 start -> S2 end", "#f97316", s1Start, s2End);
+    case "S1_peak_to_S2_peak_ms":
+      return createRange("S1 peak -> S2 peak", "#f97316", s1Peak, s2Peak);
+    case "HeartRate_bpm":
+      return createRange("Cycle -> Cycle", "#f9c74a", s1Start, nextS1Start);
+    case "S1S_RS_Peak":
+      return createPoint("S1 start RS", "#ff7b72", s1Overlay.startPeak?.[0]);
+    case "S1E_RS_Peak":
+      return createPoint("S1 end RS", "#ff7b72", s1Overlay.endPeak?.[0]);
+    case "S2S_RS_Peak":
+      return createPoint("S2 start RS", "#ff7b72", s2Overlay?.startPeak?.[0]);
+    case "S2E_RS_Peak":
+      return createPoint("S2 end RS", "#ff7b72", s2Overlay?.endPeak?.[0]);
+    case "S1S_RS_Width_ms": {
+      const bounds = getRsWidthBounds(rsLookups.s1Start, s1Overlay.startPeak?.[0]);
+      return createRange("S1 start RS width", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    case "S1E_RS_Width_ms": {
+      const bounds = getRsWidthBounds(rsLookups.s1End, s1Overlay.endPeak?.[0]);
+      return createRange("S1 end RS width", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    case "S2S_RS_Width_ms": {
+      const bounds = getRsWidthBounds(rsLookups.s2Start, s2Overlay?.startPeak?.[0]);
+      return createRange("S2 start RS width", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    case "S2E_RS_Width_ms": {
+      const bounds = getRsWidthBounds(rsLookups.s2End, s2Overlay?.endPeak?.[0]);
+      return createRange("S2 end RS width", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    case "S1S_RS_STD": {
+      const bounds = getRsStdWindowBounds(s1Overlay.startPeak?.[0], maxIndex);
+      return createRange("S1 start RS std window", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    case "S1E_RS_STD": {
+      const bounds = getRsStdWindowBounds(s1Overlay.endPeak?.[0], maxIndex);
+      return createRange("S1 end RS std window", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    case "S2S_RS_STD": {
+      const bounds = getRsStdWindowBounds(s2Overlay?.startPeak?.[0], maxIndex);
+      return createRange("S2 start RS std window", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    case "S2E_RS_STD": {
+      const bounds = getRsStdWindowBounds(s2Overlay?.endPeak?.[0], maxIndex);
+      return createRange("S2 end RS std window", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    default:
+      return null;
+  }
+};
+
+const mergeParameterGroupMetrics = (
+  groups: Array<ParameterSummaryGroup | null>,
+  nextKey: string,
+  nextLabel: string
+): ParameterSummaryGroup | null => {
+  const metrics = groups.flatMap((group) => group?.metrics ?? []);
+  if (metrics.length === 0) {
+    return null;
+  }
+
+  return {
+    key: nextKey,
+    label: nextLabel,
+    metrics,
+  };
+};
+
+const getParameterMetricUnit = (metricKey: string): string | null => {
   if (/_ratio$/i.test(metricKey) || metricKey === "sys_dia_ratio" || metricKey === "S1_ratio" || metricKey === "S2_ratio") {
-    return "ratio";
+    return "무단위";
   }
 
   if (
     /(?:_width|_duration|_interval|_segment)$/i.test(metricKey) ||
+    /(?:_center_time|_to_)/i.test(metricKey) ||
     ["p_rs", "qrs_rs", "t_rs", "cycle_duration"].includes(metricKey)
   ) {
-    return workspaceKind === "ecg" ? "samples" : "index";
+    return "Sample";
   }
 
-  if (/(?:^area_|_area$)/i.test(metricKey)) {
-    return workspaceKind === "ecg" ? "a.u. * samples" : "a.u. * index";
+  if (/(?:^area_|_area$|^area_abs_)/i.test(metricKey)) {
+    return "Amp×Sample";
   }
 
-  if (/(?:^Peak_|_peak_|_amp$|_avg$|^rms_)/i.test(metricKey)) {
-    return "a.u.";
+  if (/(?:^Peak_|^peak_abs_|^ptp_|^mean_abs_|_peak_|_amp$|_avg$|^rms_)/i.test(metricKey)) {
+    return "Amp";
+  }
+
+  if (/^energy(?:_|$)|^log_energy_|^energy_per_sample_/i.test(metricKey)) {
+    return "Amp²";
   }
 
   return null;
@@ -803,6 +1944,12 @@ const getFileMetaText = (file: UploadedFileMetadata): string => {
 
 const isPanelLinkedFileRole = (fileRole: FileRole): fileRole is PanelLinkedFileRole =>
   fileRole === "parameter" || fileRole === "unsupervised" || fileRole === "wave";
+
+const getParameterSourceFileId = (panel: PanelState): string | null =>
+  panel.workspaceKind === "heartsound" ? panel.fileId : panel.parameterFileId;
+
+const getParameterSourceName = (panel: PanelState): string | null =>
+  panel.workspaceKind === "heartsound" ? panel.fileName : panel.parameterFileName;
 
 const getLinkedFileIdForPanelRole = (panel: PanelState, fileRole: FileRole): string | null => {
   if (fileRole === "data") {
@@ -1059,6 +2206,7 @@ const PanelCard = memo(function PanelCard({
   plotState,
   parameterState,
   unsupervisedState,
+  heartsoundCandidateSettings,
   isActive,
   onActivate,
   onToggleParameterSummary,
@@ -1070,7 +2218,8 @@ const PanelCard = memo(function PanelCard({
   onResetPanel,
   onSliderRangeCommit,
   onPrefetchRange,
-  onSelectCycle
+  onSelectCycle,
+  onSelectParameterMetric
 }: PanelCardProps) {
   const sliderDebounceRef = useRef<number | null>(null);
 
@@ -1085,6 +2234,8 @@ const PanelCard = memo(function PanelCard({
   const activePlot = plotState.current ?? plotState.overview;
   const overviewPlot = plotState.overview ?? activePlot;
   const showParameterSection = panel.showParameterSummary;
+  const parameterSourceFileId = getParameterSourceFileId(panel);
+  const parameterSourceName = getParameterSourceName(panel);
   const rangeGuide = useMemo(() => {
     if (panel.previousRangeStart === null || panel.previousRangeEnd === null) {
       return null;
@@ -1120,13 +2271,83 @@ const PanelCard = memo(function PanelCard({
       null
     );
   }, [parameterState.selectedCycleIndex, parameterSummary]);
+  const parameterCycles = parameterSummary?.cycles ?? [];
+  const selectedCycleOffset = useMemo(() => {
+    if (!selectedCycle) {
+      return -1;
+    }
+    return parameterCycles.findIndex((cycle) => cycle.cycleIndex === selectedCycle.cycleIndex);
+  }, [parameterCycles, selectedCycle]);
   const displayedParameterGroups = selectedCycle?.groups ?? parameterSummary?.groups ?? [];
+  const selectedParameterMetricKey = parameterState.selectedMetricKey;
+  const heartsoundParameterSections = useMemo<HeartsoundParameterSection[]>(() => {
+    if (workspaceKind !== "heartsound" || displayedParameterGroups.length === 0) {
+      return [];
+    }
+
+    const findGroup = (key: string) => displayedParameterGroups.find((group) => group.key === key);
+    const compactGroups = (groups: Array<ParameterSummaryGroup | null>) =>
+      groups.filter((group): group is ParameterSummaryGroup => group !== null);
+
+    const rsPeakGroup = findGroup("rs_peak");
+    const rsWidthGroup = findGroup("rs_width");
+    const rsStdGroup = findGroup("rs_std");
+    const rsScoreGroup = mergeParameterGroupMetrics(
+      [
+        rsPeakGroup ?? null,
+        rsWidthGroup ?? null,
+        rsStdGroup ?? null,
+      ],
+      "rs_score",
+      "RS Score"
+    );
+
+    return [
+      {
+        key: "s1",
+        title: "S1",
+        subtitle: "첫 번째 심음 구간에서 계산된 값",
+        toneClassName: "is-s1",
+        groups: compactGroups([findGroup("s1_parameters") ?? null]),
+        metrics: [],
+      },
+      {
+        key: "s2",
+        title: "S2",
+        subtitle: "두 번째 심음 구간에서 계산된 값",
+        toneClassName: "is-s2",
+        groups: compactGroups([findGroup("s2_parameters") ?? null]),
+        metrics: [],
+      },
+      {
+        key: "relation",
+        title: "S1-S2",
+        subtitle: "두 심음 사이의 간격과 관계 값",
+        toneClassName: "is-relation",
+        groups: compactGroups([findGroup("s1_s2_relation") ?? null]),
+        metrics: [],
+      },
+      {
+        key: "rs-score",
+        title: "RS Score",
+        subtitle: "이벤트 peak에서 계산된 RS 관련 값",
+        toneClassName: "is-rs-score",
+        groups: compactGroups([rsScoreGroup]),
+        metrics: [],
+      },
+    ].filter((section) => section.groups.length > 0);
+  }, [displayedParameterGroups, workspaceKind]);
+  const heartRateMetric = useMemo(
+    () => displayedParameterGroups.find((group) => group.key === "heart_rate")?.metrics[0] ?? null,
+    [displayedParameterGroups]
+  );
   const [parameterSplitRatio, setParameterSplitRatio] = useState<number>(0.5);
   const [isSplitDragging, setIsSplitDragging] = useState<boolean>(false);
   const [isWavePlaying, setIsWavePlaying] = useState<boolean>(false);
   const [rewindAnimating, setRewindAnimating] = useState<boolean>(false);
   const [waveMarkerIndex, setWaveMarkerIndex] = useState<number | null>(null);
   const [wavePlaybackRate, setWavePlaybackRate] = useState<number>(WAVE_PLAYBACK_RATES[0]);
+  const [waveDurationSeconds, setWaveDurationSeconds] = useState<number | null>(null);
   const [playheadPixelLeft, setPlayheadPixelLeft] = useState<number | null>(null);
   const [isPlayheadDragging, setIsPlayheadDragging] = useState<boolean>(false);
   const panelWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -1338,7 +2559,10 @@ const PanelCard = memo(function PanelCard({
       resetWaveViewportToOrigin();
       stopMarkerLoop();
     };
-    const handleLoadedMetadata = () => syncMarker();
+    const handleLoadedMetadata = () => {
+      setWaveDurationSeconds(Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null);
+      syncMarker();
+    };
     const handleTimeUpdate = () => syncMarker();
     const handleSeeked = () => syncMarker();
 
@@ -1382,6 +2606,7 @@ const PanelCard = memo(function PanelCard({
     audio.defaultPlaybackRate = WAVE_PLAYBACK_RATES[0];
     setIsWavePlaying(false);
     setWavePlaybackRate(WAVE_PLAYBACK_RATES[0]);
+    setWaveDurationSeconds(null);
     setWaveMarkerIndex(waveSource ? 0 : null);
   }, [waveSource]);
 
@@ -1783,8 +3008,8 @@ const PanelCard = memo(function PanelCard({
     const pointQrssPairs = toDataPairs(activePlot.x, activePlot.pointQrss);
     const pointQrsePairs = toDataPairs(activePlot.x, activePlot.pointQrse);
     const pointTsPairs = toDataPairs(activePlot.x, activePlot.pointTs);
-    const s1RegionOverlays =
-      workspaceKind === "heartsound" && panel.visibleSeries.s1Area
+    const allS1RegionOverlays =
+      workspaceKind === "heartsound"
         ? buildHeartsoundRegionOverlays(
             "S1",
             s1StartPairs,
@@ -1793,8 +3018,8 @@ const PanelCard = memo(function PanelCard({
             "rgba(46, 160, 67, 0.42)"
           )
         : [];
-    const s2RegionOverlays =
-      workspaceKind === "heartsound" && panel.visibleSeries.s2Area
+    const allS2RegionOverlays =
+      workspaceKind === "heartsound"
         ? buildHeartsoundRegionOverlays(
             "S2",
             s2StartPairs,
@@ -1803,6 +3028,104 @@ const PanelCard = memo(function PanelCard({
             "rgba(248, 81, 73, 0.38)"
           )
         : [];
+    const resolvedHeartsoundRegionOverlays =
+      workspaceKind === "heartsound"
+        ? resolveOverlappingHeartsoundRegionOverlays(allS1RegionOverlays, allS2RegionOverlays)
+        : { s1Overlays: [], s2Overlays: [] };
+    const normalizedS1RegionOverlays =
+      workspaceKind === "heartsound"
+        ? resolvedHeartsoundRegionOverlays.s1Overlays
+        : [];
+    const normalizedS2RegionOverlays =
+      workspaceKind === "heartsound"
+        ? resolvedHeartsoundRegionOverlays.s2Overlays
+        : [];
+    const s1RegionOverlays = panel.visibleSeries.s1Area ? normalizedS1RegionOverlays : [];
+    const s2RegionOverlays = panel.visibleSeries.s2Area ? normalizedS2RegionOverlays : [];
+    const heartsoundSampleRate =
+      workspaceKind === "heartsound"
+        ? resolveHeartsoundSampleRate(
+            panel.totalRows ?? activePlot.originalRowCount,
+            waveDurationSeconds,
+            HEARTSOUND_CANDIDATE_CONFIG.fallbackSampleRate
+          )
+        : HEARTSOUND_CANDIDATE_CONFIG.fallbackSampleRate;
+    const heartsoundCandidates =
+      workspaceKind === "heartsound"
+        ? buildHeartsoundCandidateOverlays(
+            amplitudePairs,
+            normalizedS1RegionOverlays,
+            normalizedS2RegionOverlays,
+            heartsoundSampleRate,
+            heartsoundCandidateSettings
+          )
+        : { s3Candidates: [], s4Candidates: [] };
+    const s3CandidateOverlays =
+      workspaceKind === "heartsound" && panel.visibleSeries.s3Candidates
+        ? heartsoundCandidates.s3Candidates
+        : [];
+    const s4CandidateOverlays =
+      workspaceKind === "heartsound" && panel.visibleSeries.s4Candidates
+        ? heartsoundCandidates.s4Candidates
+        : [];
+    const amplitudeLookup = buildPairValueLookup(amplitudePairs);
+    const rsLookups = {
+      s1Start: buildPairValueLookup(s1StartPairs),
+      s1End: buildPairValueLookup(s1EndPairs),
+      s2Start: buildPairValueLookup(s2StartPairs),
+      s2End: buildPairValueLookup(s2EndPairs),
+    };
+    const selectedCycleMeasurementContext: HeartsoundCycleMeasurementContext | null =
+      workspaceKind === "heartsound" && selectedCycle
+        ? (() => {
+            const s1Overlay =
+              normalizedS1RegionOverlays.find((overlay) => overlay.areaStart === selectedCycle.startIndex) ?? null;
+            if (!s1Overlay) {
+              return null;
+            }
+            const s1OverlayIndex = normalizedS1RegionOverlays.findIndex(
+              (overlay) => overlay.areaStart === s1Overlay.areaStart && overlay.areaEnd === s1Overlay.areaEnd
+            );
+            const nextS1Overlay =
+              s1OverlayIndex >= 0 && s1OverlayIndex + 1 < normalizedS1RegionOverlays.length
+                ? normalizedS1RegionOverlays[s1OverlayIndex + 1]
+                : null;
+            if (nextS1Overlay && nextS1Overlay.areaStart !== selectedCycle.endIndex) {
+              return null;
+            }
+            const s2Overlay =
+              normalizedS2RegionOverlays.find((overlay) => {
+                if (overlay.areaStart < s1Overlay.areaEnd) {
+                  return false;
+                }
+                if (nextS1Overlay && overlay.areaStart >= nextS1Overlay.areaStart) {
+                  return false;
+                }
+                if (nextS1Overlay && overlay.areaEnd >= nextS1Overlay.areaStart) {
+                  return false;
+                }
+                return true;
+              }) ?? null;
+
+            return {
+              s1Overlay,
+              s2Overlay,
+              nextS1Overlay,
+            };
+          })()
+        : null;
+    const selectedParameterMeasurement =
+      workspaceKind === "heartsound" &&
+      selectedParameterMetricKey &&
+      selectedCycleMeasurementContext
+        ? buildParameterMeasurementAnnotation(
+            selectedParameterMetricKey,
+            selectedCycleMeasurementContext,
+            amplitudeLookup,
+            rsLookups,
+            maxIndex
+          )
+        : null;
     const overviewPairs = overviewPlot
       ? toDataPairs(overviewPlot.x, overviewPlot.amplitude)
       : amplitudePairs;
@@ -1860,16 +3183,181 @@ const PanelCard = memo(function PanelCard({
         data: [],
         markArea: {
           silent: true,
-          label: { show: false },
+          label: {
+            show: true,
+            color: "#ffffff",
+            fontSize: 10,
+            fontWeight: 700,
+            position: "top",
+            distance: 2,
+            formatter: "Cycle"
+          },
           itemStyle: {
-            color: "rgba(255, 166, 87, 0.22)",
-            borderColor: "rgba(255, 166, 87, 0.62)"
+            color: "rgba(255, 77, 166, 0)",
+            borderColor: "rgba(255, 77, 166, 0.98)",
+            borderWidth: 2.4,
+            borderType: "solid"
           },
           data: [[{ xAxis: selectedCycle.startIndex }, { xAxis: selectedCycle.endIndex }]]
         }
       });
     }
-    for (const regionOverlay of [...s1RegionOverlays, ...s2RegionOverlays]) {
+    if (workspaceKind === "heartsound" && selectedParameterMeasurement && amplitudePairs.length > 0) {
+      const amplitudeValues = amplitudePairs.map((pair) => pair[1]);
+      const amplitudeMin = Math.min(...amplitudeValues);
+      const amplitudeMax = Math.max(...amplitudeValues);
+      const amplitudeSpan = Math.max(amplitudeMax - amplitudeMin, 1);
+      const annotationY = amplitudeMin + amplitudeSpan * 0.12;
+
+      mainSeries.push({
+        name: "Parameter Measurement",
+        type: "custom",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        clip: true,
+        silent: true,
+        animation: false,
+        encode: {
+          x: [0, 1],
+          y: 2,
+          tooltip: []
+        },
+        data: [[
+          selectedParameterMeasurement.startIndex,
+          selectedParameterMeasurement.endIndex,
+          annotationY,
+          selectedParameterMeasurement.label,
+          selectedParameterMeasurement.color,
+          selectedParameterMeasurement.kind,
+        ]],
+        renderItem(_params, api) {
+          const startValue = Number(api.value(0));
+          const endValue = Number(api.value(1));
+          const yValue = Number(api.value(2));
+          const label = String(api.value(3) ?? "");
+          const color = String(api.value(4) ?? "#f78166");
+          const kind = String(api.value(5) ?? "range");
+          const startPoint = api.coord([startValue, yValue]);
+          const endPoint = api.coord([endValue, yValue]);
+          const lineY = startPoint[1];
+          const midX = (startPoint[0] + endPoint[0]) / 2;
+          const arrowSize = Math.max(6, Math.min(10, Math.abs(endPoint[0] - startPoint[0]) / 8));
+
+          if (kind === "point" || startValue === endValue) {
+            return {
+              type: "group",
+              children: [
+                {
+                  type: "line",
+                  shape: {
+                    x1: startPoint[0],
+                    y1: lineY - 18,
+                    x2: startPoint[0],
+                    y2: lineY + 18,
+                  },
+                  style: {
+                    stroke: color,
+                    lineWidth: 2,
+                    opacity: 0.95,
+                  },
+                },
+                {
+                  type: "circle",
+                  shape: {
+                    cx: startPoint[0],
+                    cy: lineY,
+                    r: 4,
+                  },
+                  style: {
+                    fill: color,
+                    opacity: 0.98,
+                  },
+                },
+                {
+                  type: "text",
+                  style: {
+                    x: startPoint[0],
+                    y: lineY - 22,
+                    text: label,
+                    fill: color,
+                    font: "700 11px sans-serif",
+                    textAlign: "center",
+                    textVerticalAlign: "bottom",
+                  },
+                },
+              ],
+            };
+          }
+
+          return {
+            type: "group",
+            children: [
+              {
+                type: "line",
+                shape: {
+                  x1: startPoint[0],
+                  y1: lineY,
+                  x2: endPoint[0],
+                  y2: lineY
+                },
+                style: {
+                  stroke: color,
+                  lineWidth: 2.1,
+                  opacity: 0.9
+                }
+              },
+              {
+                type: "polygon",
+                shape: {
+                  points: [
+                    [startPoint[0], lineY],
+                    [startPoint[0] + arrowSize, lineY - arrowSize / 2],
+                    [startPoint[0] + arrowSize, lineY + arrowSize / 2]
+                  ]
+                },
+                style: {
+                  fill: color,
+                  opacity: 0.9
+                }
+              },
+              {
+                type: "polygon",
+                shape: {
+                  points: [
+                    [endPoint[0], lineY],
+                    [endPoint[0] - arrowSize, lineY - arrowSize / 2],
+                    [endPoint[0] - arrowSize, lineY + arrowSize / 2]
+                  ]
+                },
+                style: {
+                  fill: color,
+                  opacity: 0.9
+                }
+              },
+              {
+                type: "text",
+                style: {
+                  x: midX,
+                  y: lineY - 8,
+                  text: label,
+                  fill: color,
+                  font: "700 11px sans-serif",
+                  textAlign: "center",
+                  textVerticalAlign: "bottom",
+                }
+              },
+            ],
+          };
+        },
+      });
+    }
+    for (const regionOverlay of [
+      ...s1RegionOverlays,
+      ...s2RegionOverlays,
+      ...s3CandidateOverlays,
+      ...s4CandidateOverlays
+    ]) {
+      const showCandidateLabel = regionOverlay.label === "S3" || regionOverlay.label === "S4";
       mainSeries.push({
         name: `${regionOverlay.label} Region`,
         type: "line",
@@ -1885,10 +3373,25 @@ const PanelCard = memo(function PanelCard({
         data: [],
         markArea: {
           silent: true,
-          label: { show: false },
+          label: showCandidateLabel
+            ? {
+                show: true,
+                color: "#ffffff",
+                fontSize: 10,
+                fontWeight: 700,
+                position: "top",
+                distance: 2,
+                formatter: regionOverlay.label
+              }
+            : { show: false },
           itemStyle: {
             color: regionOverlay.fillColor,
-            borderColor: regionOverlay.borderColor
+            borderColor: regionOverlay.borderColor,
+            borderWidth:
+              regionOverlay.label === "S3" || regionOverlay.label === "S4"
+                ? 2.4
+                : 1,
+            borderType: "solid"
           },
           data: [[
             { name: regionOverlay.label, xAxis: regionOverlay.areaStart },
@@ -2286,7 +3789,16 @@ const PanelCard = memo(function PanelCard({
       ],
       series: mainSeries
     };
-  }, [activePlot, overviewPlot, panel, selectedCycle, unsupervisedSummary, workspaceKind]);
+  }, [
+    activePlot,
+    heartsoundCandidateSettings,
+    overviewPlot,
+    panel,
+    selectedCycle,
+    unsupervisedSummary,
+    waveDurationSeconds,
+    workspaceKind
+  ]);
 
   const chartLegendItems = useMemo(() => {
     const seriesItems =
@@ -2295,7 +3807,11 @@ const PanelCard = memo(function PanelCard({
         : ECG_SERIES_ITEMS_BY_MODE[panel.styleOptions.ecgMarkerMode];
 
     return seriesItems.filter(
-      (seriesItem) => seriesItem.key !== "amplitude" && panel.visibleSeries[seriesItem.key]
+      (seriesItem) =>
+        seriesItem.key !== "amplitude" &&
+        seriesItem.key !== "s3Candidates" &&
+        seriesItem.key !== "s4Candidates" &&
+        panel.visibleSeries[seriesItem.key]
     );
   }, [panel.styleOptions.ecgMarkerMode, panel.visibleSeries, workspaceKind]);
 
@@ -2396,8 +3912,8 @@ const PanelCard = memo(function PanelCard({
           {panel.waveFileName ? (
             <div className="panel-linked-parameter">Wave: {panel.waveFileName}</div>
           ) : null}
-          {panel.parameterFileName ? (
-            <div className="panel-linked-parameter">Parameter: {panel.parameterFileName}</div>
+          {parameterSourceName ? (
+            <div className="panel-linked-parameter">Parameter: {parameterSourceName}</div>
           ) : null}
           {panel.unsupervisedFileName ? (
             <div className="panel-linked-parameter">Unsupervised: {panel.unsupervisedFileName}</div>
@@ -2625,10 +4141,10 @@ const PanelCard = memo(function PanelCard({
             ) : null}
             {showParameterSection ? (
               <div className="panel-parameter-section" style={parameterSectionStyle}>
-                {panel.parameterFileId ? (
+                {parameterSourceFileId ? (
                   <div className="parameter-summary-shell">
                     <div className="parameter-summary-header">
-                      <div className="parameter-summary-title">Linked parameter window</div>
+                      <div className="parameter-summary-title">Parameter window</div>
                       <div className="parameter-summary-header-actions">
                         <label
                           className={`panel-parameter-toggle parameter-highlight-toggle${
@@ -2677,76 +4193,240 @@ const PanelCard = memo(function PanelCard({
                       <div className="panel-chart-error">{parameterState.error}</div>
                     ) : parameterSummary ? (
                       <>
-                        {workspaceKind === "heartsound" && (parameterSummary.cycles?.length ?? 0) > 0 ? (
+                        {workspaceKind === "heartsound" &&
+                        (parameterSummary.cycles?.length ?? 0) > 0 &&
+                        displayedParameterGroups.length > 0 ? (
                           <div className="parameter-cycle-toolbar">
-                            <label className="parameter-cycle-field">
+                            <div className="parameter-cycle-field">
                               <span className="parameter-cycle-label">Cycle</span>
-                              <select
-                                className="settings-input parameter-cycle-select"
-                                value={String(selectedCycle?.cycleIndex ?? parameterSummary.cycles?.[0]?.cycleIndex ?? "")}
-                                onChange={(event) => onSelectCycle(panel.panelId, Number(event.target.value))}
-                              >
-                                {parameterSummary.cycles?.map((cycle) => (
-                                  <option key={cycle.cycleIndex} value={cycle.cycleIndex}>
-                                    Cycle {cycle.cycleIndex}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                              <div className="parameter-cycle-stepper" role="group" aria-label="Cycle navigation">
+                                <button
+                                  type="button"
+                                  className="parameter-cycle-stepper-button"
+                                  aria-label="Previous cycle"
+                                  title="Previous cycle"
+                                  disabled={selectedCycleOffset <= 0}
+                                  onClick={() => {
+                                    const previousCycle = parameterCycles[selectedCycleOffset - 1];
+                                    if (previousCycle) {
+                                      onSelectCycle(panel.panelId, previousCycle.cycleIndex);
+                                    }
+                                  }}
+                                >
+                                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                                    <path
+                                      d="M10.5 3.5 6 8l4.5 4.5"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="1.8"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                </button>
+                                <div className="parameter-cycle-current">
+                                  {selectedCycle ? `Cycle ${selectedCycle.cycleIndex}` : "-"}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="parameter-cycle-stepper-button"
+                                  aria-label="Next cycle"
+                                  title="Next cycle"
+                                  disabled={
+                                    selectedCycleOffset < 0 || selectedCycleOffset >= parameterCycles.length - 1
+                                  }
+                                  onClick={() => {
+                                    const nextCycle = parameterCycles[selectedCycleOffset + 1];
+                                    if (nextCycle) {
+                                      onSelectCycle(panel.panelId, nextCycle.cycleIndex);
+                                    }
+                                  }}
+                                >
+                                  <svg viewBox="0 0 16 16" aria-hidden="true">
+                                    <path
+                                      d="M5.5 3.5 10 8l-4.5 4.5"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="1.8"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                    />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
                             {selectedCycle ? (
                               <div className="parameter-cycle-range">
                                 highlight {formatRowNumber(selectedCycle.startIndex)} -{" "}
                                 {formatRowNumber(selectedCycle.endIndex)}
                               </div>
                             ) : null}
+                            {heartRateMetric ? (
+                              (() => {
+                                const heartRateTooltip = getHeartsoundParameterTooltipContent(
+                                  heartRateMetric.key,
+                                  heartRateMetric.label
+                                );
+                                return (
+                                  <button
+                                    type="button"
+                                    className={`parameter-cycle-heart-rate${
+                                      selectedParameterMetricKey === heartRateMetric.key ? " is-active" : ""
+                                    }`}
+                                    onClick={() => onSelectParameterMetric(panel.panelId, heartRateMetric.key)}
+                                  >
+                                    <span className="parameter-cycle-heart-rate-label">HR</span>
+                                    <span className="parameter-cycle-heart-rate-value">
+                                      {formatHeartsoundParameterMetricValue(heartRateMetric.mean)}
+                                      {heartRateMetric.unit ? ` ${heartRateMetric.unit}` : ""}
+                                    </span>
+                                    {heartRateTooltip ? (
+                                      <span
+                                        className="heartsound-parameter-tooltip parameter-cycle-heart-rate-tooltip"
+                                        role="tooltip"
+                                      >
+                                        <span className="heartsound-parameter-tooltip-title">
+                                          {heartRateTooltip.title}
+                                        </span>
+                                        <span className="heartsound-parameter-tooltip-summary">
+                                          {heartRateTooltip.summary}
+                                        </span>
+                                        <span className="heartsound-parameter-tooltip-schematic">
+                                          {heartRateTooltip.schematic}
+                                        </span>
+                                      </span>
+                                    ) : null}
+                                  </button>
+                                );
+                              })()
+                            ) : null}
                           </div>
                         ) : null}
-                        <div className="parameter-group-list">
-                          {displayedParameterGroups.map((group) => {
-                            const scaleMax = Math.max(
-                              ...group.metrics.flatMap((metric) => [
-                                Math.abs(metric.mean),
-                                Math.abs(metric.min),
-                                Math.abs(metric.max)
-                              ]),
-                              1
-                            );
-                            return (
-                              <section key={group.key} className="parameter-group-card">
-                                <div className="parameter-group-title">{group.label}</div>
-                                <div className="parameter-metric-list">
-                                  {group.metrics.map((metric) => {
-                                    const barWidth = `${Math.min(100, (Math.abs(metric.mean) / scaleMax) * 100)}%`;
-                                    const metricUnit = getParameterMetricUnit(workspaceKind, metric.key);
-                                    return (
-                                      <div key={metric.key} className="parameter-metric-row">
-                                        <div className="parameter-metric-label">
-                                          <span>{metric.label}</span>
-                                          {metricUnit ? <span className="parameter-metric-unit">{metricUnit}</span> : null}
+                        {workspaceKind === "heartsound" && heartsoundParameterSections.length > 0 ? (
+                          <div className="heartsound-parameter-layout">
+                            {heartsoundParameterSections.map((section) => (
+                              <section
+                                key={section.key}
+                                className={`heartsound-parameter-section ${section.toneClassName}`}
+                              >
+                                <div className="heartsound-parameter-section-header">
+                                  <div className="heartsound-parameter-section-title">{section.title}</div>
+                                  <div className="heartsound-parameter-section-subtitle">{section.subtitle}</div>
+                                </div>
+                                <div className="heartsound-parameter-section-body">
+                                  {section.groups.map((group, groupIndex) => (
+                                    <div key={group.key} className="heartsound-parameter-block">
+                                      {section.groups.length > 1 && groupIndex > 0 ? (
+                                        <div
+                                          className={`heartsound-parameter-block-title${
+                                            group.key.startsWith("rs_score") ? " is-rs-score" : ""
+                                          }`}
+                                        >
+                                          {group.label}
                                         </div>
-                                        <div className="parameter-metric-meter">
-                                          <div className="parameter-metric-meter-fill" style={{ width: barWidth }} />
-                                        </div>
-                                        <div className="parameter-metric-value">{formatMetricValue(metric.mean)}</div>
+                                      ) : null}
+                                      <div className="heartsound-parameter-metric-grid">
+                                        {group.metrics.map((metric) => {
+                                          const metricUnit = metric.unit ?? getParameterMetricUnit(metric.key);
+                                          const metricTooltip = getHeartsoundParameterTooltipContent(
+                                            metric.key,
+                                            metric.label
+                                          );
+                                          return (
+                                            <button
+                                              key={metric.key}
+                                              type="button"
+                                              className={`heartsound-parameter-metric-card${
+                                                selectedParameterMetricKey === metric.key ? " is-active" : ""
+                                              }`}
+                                              onClick={() => onSelectParameterMetric(panel.panelId, metric.key)}
+                                            >
+                                              <div className="heartsound-parameter-metric-name">{metric.label}</div>
+                                              <div className="heartsound-parameter-metric-value-row">
+                                                <div className="heartsound-parameter-metric-value">
+                                                  {formatHeartsoundParameterMetricValue(metric.mean)}
+                                                </div>
+                                                {metricUnit && metricUnit !== "무단위" ? (
+                                                  <div className="heartsound-parameter-metric-unit">{metricUnit}</div>
+                                                ) : null}
+                                              </div>
+                                              {metricTooltip ? (
+                                                <div className="heartsound-parameter-tooltip" role="tooltip">
+                                                  <div className="heartsound-parameter-tooltip-title">
+                                                    {metricTooltip.title}
+                                                  </div>
+                                                  <div className="heartsound-parameter-tooltip-summary">
+                                                    {metricTooltip.summary}
+                                                  </div>
+                                                  <div className="heartsound-parameter-tooltip-schematic">
+                                                    {metricTooltip.schematic}
+                                                  </div>
+                                                </div>
+                                              ) : null}
+                                            </button>
+                                          );
+                                        })}
                                       </div>
-                                    );
-                                  })}
+                                    </div>
+                                  ))}
                                 </div>
                               </section>
-                            );
-                          })}
-                        </div>
+                            ))}
+                          </div>
+                        ) : displayedParameterGroups.length > 0 ? (
+                          <div className="parameter-group-list">
+                            {displayedParameterGroups.map((group) => {
+                              return (
+                                <section key={group.key} className="parameter-group-card">
+                                  <div className="parameter-group-title">{group.label}</div>
+                                  {group.description ? (
+                                    <div className="parameter-group-description">{group.description}</div>
+                                  ) : null}
+                                  <div className="parameter-metric-list">
+                                    {group.metrics.map((metric) => {
+                                      const metricUnit = metric.unit ?? getParameterMetricUnit(metric.key);
+                                      return (
+                                        <div key={metric.key} className="parameter-metric-row">
+                                          <div className="parameter-metric-label">
+                                            <div className="parameter-metric-label-main">
+                                              <span>{metric.label}</span>
+                                            </div>
+                                            {metric.description ? (
+                                              <div className="parameter-metric-description">{metric.description}</div>
+                                            ) : null}
+                                          </div>
+                                          <div className="parameter-metric-value">
+                                            <span className="parameter-metric-value-label">값</span>
+                                            <span className="parameter-metric-value-number">
+                                              {metricUnit && metricUnit !== "무단위"
+                                                ? `${formatMetricValue(metric.mean)} ${metricUnit}`
+                                                : formatMetricValue(metric.mean)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </section>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="parameter-summary-empty">
+                            아직 추가된 parameter가 없습니다.
+                          </div>
+                        )}
                       </>
                     ) : (
                       <div className="parameter-summary-empty">
-                        Attach a parameter file to this panel to view the current-range summary.
+                        아직 추가된 parameter가 없습니다.
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="parameter-summary-shell parameter-summary-shell-empty">
                     <div className="parameter-summary-empty">
-                      Attach a parameter file to this panel to view the current-range summary.
+                      아직 추가된 parameter가 없습니다.
                     </div>
                   </div>
                 )}
@@ -2788,6 +4468,7 @@ function App() {
 
   const requestSeqRef = useRef<Record<PanelId, number>>({ 1: 0, 2: 0, 3: 0, 4: 0 });
   const prefetchedRangeRef = useRef<PrefetchedRangeStore>({});
+  const keyboardRangeCommitTimeoutRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -2802,6 +4483,7 @@ function App() {
     filesByWorkspace,
     filesLoadingByWorkspace,
     uploadingByWorkspace,
+    heartsoundCandidateSettings,
     searchText,
     statusMessage,
     selectedDeleteIds
@@ -2818,6 +4500,7 @@ function App() {
   const files = filesByWorkspace[activeWorkspace];
   const filesLoading = filesLoadingByWorkspace[activeWorkspace];
   const uploading = uploadingByWorkspace[activeWorkspace];
+  const availableFileRoleTabs = useMemo(() => getAvailableFileRoleTabs(activeWorkspace), [activeWorkspace]);
 
   const updateAppState = useCallback((updater: (state: AppState) => AppState) => {
     setAppState((previous) => updater(previous));
@@ -2909,9 +4592,78 @@ function App() {
 
   const selectPanelCycle = useCallback(
     (panelId: PanelId, cycleIndex: number) => {
+      updateAppState((previous) => {
+        const targetPanel = previous.panels.find((panel) => panel.panelId === panelId);
+        const targetParameterState = previous.panelParameters[panelId];
+        const targetCycle = targetParameterState.summary?.cycles?.find(
+          (cycle) => cycle.cycleIndex === cycleIndex
+        );
+
+        const nextPanelParameters = {
+          ...previous.panelParameters,
+          [panelId]: {
+            ...targetParameterState,
+            selectedCycleIndex: cycleIndex,
+          },
+        };
+
+        if (
+          !targetPanel ||
+          !targetCycle ||
+          targetPanel.totalRows === null ||
+          targetPanel.totalRows <= 0
+        ) {
+          return {
+            ...previous,
+            panelParameters: nextPanelParameters,
+          };
+        }
+
+        const cycleIsVisible =
+          targetCycle.startIndex >= targetPanel.rangeStart && targetCycle.endIndex <= targetPanel.rangeEnd;
+        if (cycleIsVisible) {
+          return {
+            ...previous,
+            panelParameters: nextPanelParameters,
+          };
+        }
+
+        const maxIndex = Math.max(targetPanel.totalRows - 1, 0);
+        const visibleWidth = Math.max(targetPanel.rangeEnd - targetPanel.rangeStart, 0);
+        const cycleWidth = Math.max(targetCycle.endIndex - targetCycle.startIndex, 0);
+        const viewportWidth = Math.max(visibleWidth, cycleWidth);
+        const centeredStart = clampNumber(
+          Math.round((targetCycle.startIndex + targetCycle.endIndex) / 2 - viewportWidth / 2),
+          0,
+          maxIndex
+        );
+        const centeredEnd = clampNumber(centeredStart + viewportWidth, centeredStart, maxIndex);
+
+        return {
+          ...previous,
+          panels: previous.panels.map((panel) =>
+            panel.panelId === panelId
+              ? {
+                  ...panel,
+                  previousRangeStart: panel.rangeStart,
+                  previousRangeEnd: panel.rangeEnd,
+                  rangeStart: centeredStart,
+                  rangeEnd: centeredEnd,
+                }
+              : panel
+          ),
+          panelParameters: nextPanelParameters,
+        };
+      });
+    },
+    [updateAppState]
+  );
+
+  const selectPanelParameterMetric = useCallback(
+    (panelId: PanelId, metricKey: string) => {
       setPanelParameterState(panelId, (state) => ({
         ...state,
-        selectedCycleIndex: cycleIndex
+        selectedMetricKey: state.selectedMetricKey === metricKey ? null : metricKey
       }));
     },
     [setPanelParameterState]
@@ -3290,13 +5042,17 @@ function App() {
         const payload = await fetchParameterSummary(fileId, start, end);
         setPanelParameterState(panelId, (state) => {
           const availableCycles = payload.cycles ?? [];
+          const overlappingCycle =
+            availableCycles.find((cycle) => cycle.startIndex <= end && cycle.endIndex >= start) ?? null;
           const selectedCycleIndex =
             availableCycles.find((cycle) => cycle.cycleIndex === state.selectedCycleIndex)?.cycleIndex ??
+            overlappingCycle?.cycleIndex ??
             availableCycles[0]?.cycleIndex ??
             null;
           return {
             summary: payload,
             selectedCycleIndex,
+            selectedMetricKey: state.selectedMetricKey,
             loading: false,
             error: null
           };
@@ -3404,6 +5160,18 @@ function App() {
     }
   }, [activePanelId, updateAppState, visiblePanelIds]);
 
+  useEffect(() => {
+    if (availableFileRoleTabs.some((tab) => tab.key === activeFileRole)) {
+      return;
+    }
+
+    updateAppState((previous) => ({
+      ...previous,
+      activeFileRole: availableFileRoleTabs[0]?.key ?? "data",
+      selectedDeleteIds: []
+    }));
+  }, [activeFileRole, availableFileRoleTabs, updateAppState]);
+
   const filteredFiles = useMemo(() => {
     const roleFilteredFiles = files
       .filter((file) => file.fileRole === activeFileRole)
@@ -3425,6 +5193,9 @@ function App() {
       return roleFilteredFiles;
     }
     const query = searchText.trim().toLowerCase();
+    if (query.startsWith(SEARCH_COMMAND_PREFIX)) {
+      return roleFilteredFiles;
+    }
     return roleFilteredFiles.filter((file) => {
       const originalNameMatched = file.originalName.toLowerCase().includes(query);
       const relativePathMatched = file.relativePath?.toLowerCase().includes(query) ?? false;
@@ -3433,6 +5204,28 @@ function App() {
   }, [activeFileRole, files, searchText]);
   const allFilteredDeleteSelected =
     filteredFiles.length > 0 && filteredFiles.every((file) => selectedDeleteIds.includes(file.fileId));
+
+  const handleSearchInputKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== "Enter") {
+        return;
+      }
+
+      const result = tryApplyHeartsoundSearchCommand(searchText, heartsoundCandidateSettings);
+      if (!result) {
+        return;
+      }
+
+      event.preventDefault();
+      updateAppState((previous) => ({
+        ...previous,
+        heartsoundCandidateSettings: result.nextSettings,
+        searchText: "",
+        statusMessage: result.message
+      }));
+    },
+    [heartsoundCandidateSettings, searchText, updateAppState]
+  );
 
   const summarizeUploadResult = (result: UploadResult) => {
     const summaryParts = [`Uploaded: ${result.uploaded.length}`];
@@ -3562,6 +5355,7 @@ function App() {
       const isFullRange = clampedStart === 0 && clampedEnd === maxIndex;
       const currentPlot = panelPlots[panelId].current;
       const hasFullResolutionCurrent = isFullResolutionPlotPayload(currentPlot, panel.totalRows);
+      const parameterSourceFileId = getParameterSourceFileId(panel);
       if (isFullRange) {
         if (hasFullResolutionCurrent && currentPlot) {
           setPanelPlotState(panelId, (state) => ({
@@ -3583,8 +5377,8 @@ function App() {
             void requestOverviewPlot(panelId, panel.fileId);
           }
         }
-        if (!skipLinkedFetch && panel.parameterFileId) {
-          void requestParameterSummaryForPanel(panelId, panel.parameterFileId, clampedStart, clampedEnd);
+        if (!skipLinkedFetch && parameterSourceFileId) {
+          void requestParameterSummaryForPanel(panelId, parameterSourceFileId, clampedStart, clampedEnd);
         } else if (!skipLinkedFetch) {
           clearPanelParameterState(panelId);
         }
@@ -3596,8 +5390,8 @@ function App() {
         return;
       }
 
-      if (!skipLinkedFetch && panel.parameterFileId) {
-        void requestParameterSummaryForPanel(panelId, panel.parameterFileId, clampedStart, clampedEnd);
+      if (!skipLinkedFetch && parameterSourceFileId) {
+        void requestParameterSummaryForPanel(panelId, parameterSourceFileId, clampedStart, clampedEnd);
       } else if (!skipLinkedFetch) {
         clearPanelParameterState(panelId);
       }
@@ -3662,10 +5456,6 @@ function App() {
         return;
       }
 
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
-        return;
-      }
-
       const activeTargetPanel = panels.find((panel) => panel.panelId === activePanelId);
       if (
         !activeTargetPanel ||
@@ -3673,6 +5463,36 @@ function App() {
         activeTargetPanel.totalRows === null ||
         activeTargetPanel.totalRows <= 0
       ) {
+        return;
+      }
+
+      if (event.key === "[" || event.key === "]") {
+        if (activeTargetPanel.workspaceKind !== "heartsound") {
+          return;
+        }
+
+        const availableCycles = panelParameters[activePanelId].summary?.cycles ?? [];
+        if (availableCycles.length === 0) {
+          return;
+        }
+
+        const currentCycleIndex =
+          availableCycles.findIndex(
+            (cycle) => cycle.cycleIndex === panelParameters[activePanelId].selectedCycleIndex
+          ) ?? -1;
+        const resolvedCurrentIndex = currentCycleIndex >= 0 ? currentCycleIndex : 0;
+        const targetOffset = event.key === "[" ? -1 : 1;
+        const nextCycle = availableCycles[resolvedCurrentIndex + targetOffset];
+        if (!nextCycle) {
+          return;
+        }
+
+        event.preventDefault();
+        selectPanelCycle(activePanelId, nextCycle.cycleIndex);
+        return;
+      }
+
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
         return;
       }
 
@@ -3693,12 +5513,27 @@ function App() {
       }
 
       event.preventDefault();
-      applyPanelRange(activePanelId, nextStart, nextEnd);
+      applyPanelRange(activePanelId, nextStart, nextEnd, false, true);
+
+      if (keyboardRangeCommitTimeoutRef.current !== null) {
+        window.clearTimeout(keyboardRangeCommitTimeoutRef.current);
+      }
+
+      keyboardRangeCommitTimeoutRef.current = window.setTimeout(() => {
+        applyPanelRange(activePanelId, nextStart, nextEnd, true, false);
+        keyboardRangeCommitTimeoutRef.current = null;
+      }, KEYBOARD_RANGE_COMMIT_DEBOUNCE_MS);
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activePanelId, applyPanelRange, panels, settingsPanelId]);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      if (keyboardRangeCommitTimeoutRef.current !== null) {
+        window.clearTimeout(keyboardRangeCommitTimeoutRef.current);
+        keyboardRangeCommitTimeoutRef.current = null;
+      }
+    };
+  }, [activePanelId, applyPanelRange, panelParameters, panels, selectPanelCycle, settingsPanelId]);
 
   const assignDataFileToActivePanel = useCallback(
     (file: UploadedFileMetadata) => {
@@ -3737,8 +5572,10 @@ function App() {
           await requestRangePlot(activePanelId, file.fileId, 0, initialRangeEnd);
         }
 
-        if (matchedParameterFile) {
-          await requestParameterSummaryForPanel(activePanelId, matchedParameterFile.fileId, 0, initialRangeEnd);
+        const parameterSourceFileId =
+          activePanel.workspaceKind === "heartsound" ? file.fileId : matchedParameterFile?.fileId ?? null;
+        if (parameterSourceFileId) {
+          await requestParameterSummaryForPanel(activePanelId, parameterSourceFileId, 0, initialRangeEnd);
         } else {
           clearPanelParameterState(activePanelId);
         }
@@ -3767,20 +5604,30 @@ function App() {
 
   const assignSupportFileToActivePanel = useCallback(
     (file: UploadedFileMetadata, fileRole: PanelLinkedFileRole) => {
+      const currentPanel = panels.find((panel) => panel.panelId === activePanelId);
+      const acceptsParameterFile = currentPanel?.workspaceKind === "ecg";
+
       updatePanelState(activePanelId, (panel) => ({
         ...panel,
         waveFileId: fileRole === "wave" ? file.fileId : panel.waveFileId,
         waveFileName: fileRole === "wave" ? file.originalName : panel.waveFileName,
-        parameterFileId: fileRole === "parameter" ? file.fileId : panel.parameterFileId,
-        parameterFileName: fileRole === "parameter" ? file.originalName : panel.parameterFileName,
+        parameterFileId:
+          fileRole === "parameter" && acceptsParameterFile ? file.fileId : panel.parameterFileId,
+        parameterFileName:
+          fileRole === "parameter" && acceptsParameterFile ? file.originalName : panel.parameterFileName,
         unsupervisedFileId: fileRole === "unsupervised" ? file.fileId : panel.unsupervisedFileId,
         unsupervisedFileName: fileRole === "unsupervised" ? file.originalName : panel.unsupervisedFileName
       }));
 
-      const currentPanel = panels.find((panel) => panel.panelId === activePanelId);
-      if (fileRole === "parameter" && currentPanel?.fileId && currentPanel.totalRows !== null && currentPanel.totalRows > 0) {
+      if (
+        fileRole === "parameter" &&
+        acceptsParameterFile &&
+        currentPanel?.fileId &&
+        currentPanel.totalRows !== null &&
+        currentPanel.totalRows > 0
+      ) {
         void requestParameterSummaryForPanel(activePanelId, file.fileId, currentPanel.rangeStart, currentPanel.rangeEnd);
-      } else if (fileRole === "parameter") {
+      } else if (fileRole === "parameter" && acceptsParameterFile) {
         clearPanelParameterState(activePanelId);
       }
 
@@ -3875,6 +5722,33 @@ function App() {
       }));
     },
     [updatePanelState]
+  );
+
+  const setPanelSeriesVisibility = useCallback(
+    (panelId: PanelId, nextVisible: boolean) => {
+      const panel = panels.find((item) => item.panelId === panelId);
+      if (!panel) {
+        return;
+      }
+
+      const seriesItems = getSeriesItemsForWorkspace(
+        panel.workspaceKind,
+        panel.styleOptions.ecgMarkerMode
+      );
+
+      updatePanelState(panelId, (currentPanel) => {
+        const nextVisibleSeries = { ...currentPanel.visibleSeries };
+        for (const series of seriesItems) {
+          nextVisibleSeries[series.key] = nextVisible;
+        }
+
+        return {
+          ...currentPanel,
+          visibleSeries: nextVisibleSeries
+        };
+      });
+    },
+    [panels, updatePanelState]
   );
 
   const togglePanelParameterSummary = useCallback(
@@ -4462,7 +6336,7 @@ function App() {
               {WORKSPACE_TABS.find((workspace) => workspace.key === activeWorkspace)?.title}
             </div>
             <div className="file-role-tabs">
-              {FILE_ROLE_TABS.map((tab) => (
+              {availableFileRoleTabs.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
@@ -4515,8 +6389,9 @@ function App() {
             <input
               type="text"
               className="file-search-input"
-              placeholder="Search files"
+              placeholder="Search files or /search ..."
               value={searchText}
+              onKeyDown={handleSearchInputKeyDown}
               onChange={(event) =>
                 updateAppState((previous) => ({
                   ...previous,
@@ -4650,6 +6525,7 @@ function App() {
                     plotState={panelPlots[panelId]}
                     parameterState={panelParameters[panelId]}
                     unsupervisedState={panelUnsupervised[panelId]}
+                    heartsoundCandidateSettings={heartsoundCandidateSettings}
                     isActive={panelId === activePanelId}
                     onActivate={(nextPanelId) =>
                       updateAppState((previous) => ({
@@ -4667,6 +6543,7 @@ function App() {
                     onSliderRangeCommit={applyPanelRange}
                     onPrefetchRange={prefetchRangePlot}
                     onSelectCycle={selectPanelCycle}
+                    onSelectParameterMetric={selectPanelParameterMetric}
                   />
                 );
               })}
@@ -4850,21 +6727,42 @@ function App() {
           >
             <div className="modal-title">Panel {seriesPanel.panelId} Series</div>
             <div className="modal-body">
-              <div className="series-modal-grid">
-                {getSeriesItemsForWorkspace(
+              {(() => {
+                const seriesItems = getSeriesItemsForWorkspace(
                   seriesPanel.workspaceKind,
                   seriesPanel.styleOptions.ecgMarkerMode
-                ).map((series) => (
-                  <label key={series.key} className="series-modal-item">
-                    <input
-                      type="checkbox"
-                      checked={seriesPanel.visibleSeries[series.key]}
-                      onChange={() => togglePanelSeries(seriesPanel.panelId, series.key)}
-                    />
-                    <span style={{ color: series.color }}>{series.label}</span>
-                  </label>
-                ))}
-              </div>
+                );
+                const allSeriesEnabled = seriesItems.every(
+                  (series) => seriesPanel.visibleSeries[series.key]
+                );
+
+                return (
+                  <>
+                    <label className="series-modal-item series-modal-item-all">
+                      <input
+                        type="checkbox"
+                        checked={allSeriesEnabled}
+                        onChange={() =>
+                          setPanelSeriesVisibility(seriesPanel.panelId, !allSeriesEnabled)
+                        }
+                      />
+                      <span>All</span>
+                    </label>
+                    <div className="series-modal-grid">
+                      {seriesItems.map((series) => (
+                        <label key={series.key} className="series-modal-item">
+                          <input
+                            type="checkbox"
+                            checked={seriesPanel.visibleSeries[series.key]}
+                            onChange={() => togglePanelSeries(seriesPanel.panelId, series.key)}
+                          />
+                          <span style={{ color: series.color }}>{series.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
             <div className="modal-actions">
               <button type="button" className="split-button" onClick={closeSeriesPicker}>

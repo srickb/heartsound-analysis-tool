@@ -7,6 +7,18 @@ source "${SCRIPT_DIR}/common.sh"
 
 TUNNEL_BIN_DIR="${RUNTIME_DIR}/bin"
 
+copy_share_url_to_clipboard() {
+  local url="$1"
+  if [[ -z "${url}" ]]; then
+    return 0
+  fi
+
+  if command_exists pbcopy; then
+    printf "%s" "${url}" | pbcopy
+    print_info "Public URL copied to clipboard."
+  fi
+}
+
 download_file() {
   local url="$1"
   local destination="$2"
@@ -116,7 +128,9 @@ existing_share_pid="$(read_pid_file "${SHARE_PID_FILE}")"
 if [[ -n "${existing_share_pid}" ]] && is_pid_running "${existing_share_pid}"; then
   print_info "share tunnel is already running (PID ${existing_share_pid})"
   if [[ -f "${SHARE_URL_FILE}" ]]; then
-    print_success "Public URL: $(cat "${SHARE_URL_FILE}")"
+    existing_share_url="$(cat "${SHARE_URL_FILE}")"
+    print_success "Public URL: ${existing_share_url}"
+    copy_share_url_to_clipboard "${existing_share_url}"
   else
     print_warning "Share URL is still starting. Check ${SHARE_LOG}"
   fi
@@ -159,6 +173,7 @@ for _ in {1..30}; do
   if [[ -n "${share_url}" ]]; then
     printf "%s\n" "${share_url}" > "${SHARE_URL_FILE}"
     print_success "Public URL: ${share_url}"
+    copy_share_url_to_clipboard "${share_url}"
     print_info "Anyone with this URL can open the site from another network while this share tunnel stays running."
     print_info "If access mode is code, also run ./code and share the 5-minute numeric code."
     exit 0
