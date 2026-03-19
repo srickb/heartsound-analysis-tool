@@ -1,112 +1,114 @@
-# HeartSound Analysis Tool: Current Implemented Process and Feature Specification
+# HeartSound Analysis Tool: 현재 구현된 프로세스 및 Feature 명세
 
 Last updated: 2026-03-19
 
-This document records the current implemented behavior of the Tool project under `/Users/ms/Desktop/Tool`.
+이 문서는 `/Users/ms/Desktop/Tool` 아래의 Tool 프로젝트에서 **현재 실제로 구현되어 있는 동작**만 기록한다.
 
-It intentionally excludes discarded experiments, temporary trial logic, and historical missteps.
-It describes only the functionality that is currently implemented in code.
+폐기된 실험, 임시 테스트 로직, 과거 시행착오는 의도적으로 제외하였다.  
+즉, 이 문서는 **현재 코드에 구현된 기능만** 설명한다.
 
-## 1. Project Purpose
+## 1. 프로젝트 목적
 
-The project is a browser-based local analysis tool for two workspaces:
+이 프로젝트는 두 개의 workspace를 위한 브라우저 기반 로컬 분석 도구이다.
 
 - `HeartSound`
 - `ECG`
 
-The primary current focus of the recent implementation is the `HeartSound` workflow, including:
+최근 구현의 주요 초점은 `HeartSound` workflow이며, 현재 다음 기능들을 포함한다.
 
-- loading RS-score-based heart sound data
-- visualizing S1/S2/S3/S4-related overlays
-- linking wave audio playback
-- extracting derived parameter values directly from the uploaded `data` file
-- showing cycle-aware parameter values and graph annotations
+- RS-score 기반 심음 데이터 로딩
+- S1/S2/S3/S4 관련 overlay 시각화
+- wave audio playback 연동
+- 업로드된 `data` 파일에서 직접 파생된 parameter 값 추출
+- cycle-aware parameter 값 및 graph annotation 표시
 
-## 2. Runtime and Entry Points
+## 2. 실행 환경 및 진입점
 
-Top-level launcher commands:
+최상위 launcher 명령어:
 
-- `./start`
-  Starts frontend and backend locally.
+- `./start`  
+  frontend와 backend를 로컬에서 실행한다.
 
-- `./stop_dev.sh`
-  Stops local frontend and backend processes.
+- `./stop_dev.sh`  
+  로컬 frontend와 backend 프로세스를 중지한다.
 
-- `./status_dev.sh`
-  Prints launcher, frontend, backend, and share-tunnel status.
+- `./status_dev.sh`  
+  launcher, frontend, backend, share-tunnel 상태를 출력한다.
 
-- `./health_dev.sh`
-  Checks local app health.
+- `./health_dev.sh`  
+  로컬 앱의 health 상태를 확인한다.
 
-- `./code`
-  Generates a one-time numeric access code for access mode `code`.
+- `./code`  
+  access mode가 `code`일 때 사용할 1회용 숫자 access code를 생성한다.
 
-- `./share`
-  Starts a Cloudflare public tunnel for the frontend.
-  Current behavior:
-  - prints the public URL
-  - stores the URL in the runtime share URL file
-  - automatically copies the public URL to the macOS clipboard using `pbcopy`
-  - if a share tunnel is already running, the existing URL is reprinted and re-copied
+- `./share`  
+  frontend용 Cloudflare public tunnel을 시작한다.  
+  현재 동작:
+  - public URL 출력
+  - runtime share URL 파일에 URL 저장
+  - `pbcopy`를 사용해 public URL을 macOS clipboard에 자동 복사
+  - 이미 share tunnel이 실행 중이면 기존 URL을 다시 출력하고 다시 복사함
 
-- `./stop_share.sh`
-  Stops the public share tunnel.
+- `./stop_share.sh`  
+  public share tunnel을 중지한다.
 
-## 3. Access and Authentication
+## 3. 접근 및 인증
 
-The app supports two access modes:
+앱은 두 가지 access mode를 지원한다.
 
-- `open`
-  No viewer code required.
+- `open`  
+  viewer code 없이 접근 가능
 
-- `code`
-  A one-time numeric code is required.
+- `code`  
+  1회용 숫자 code가 필요
 
-Current default database behavior:
+현재 기본 database 동작:
 
-- default access mode is `code`
-- default admin username is `ms`
+- 기본 access mode는 `code`
+- 기본 admin username은 `ms`
 
-Frontend admin UI supports:
+Frontend admin UI에서 가능한 기능:
 
-- switching access mode between `open` and `code`
-- generating a one-time access code
+- access mode를 `open`과 `code` 사이에서 전환
+- 1회용 access code 생성
 
-## 4. Workspace and File Roles
+## 4. Workspace 및 파일 역할
 
 ### 4.1 Workspaces
 
 - `heartsound`
 - `ecg`
 
-### 4.2 File roles
+### 4.2 파일 역할
 
-Supported file roles:
+지원되는 file role:
 
 - `data`
 - `wave`
 - `parameter`
 - `unsupervised`
 
-### 4.3 File role availability by workspace
+### 4.3 Workspace별 file role 가용성
 
-Current visible tabs in the left file area:
+현재 왼쪽 파일 영역에 보이는 tab:
 
-- `HeartSound`:
+- `HeartSound`
   - `Data`
   - `Wave`
   - `Unsupervised`
-  - `Parameter` tab is hidden in the sidebar for heartsound because the current parameter workflow is data-derived, not manually uploaded, even though backend support for heartsound parameter files still exists.
+  - `Parameter` tab은 heartsound sidebar에서 숨김 처리됨.  
+    현재 parameter workflow가 수동 업로드가 아니라 `data` 기반 파생 방식이기 때문임.  
+    다만 backend에서는 heartsound parameter file 지원 자체는 여전히 존재함.
 
-- `ECG`:
+- `ECG`
   - `Data`
   - `Wave`
   - `Parameter`
   - `Unsupervised`
 
-### 4.4 Validation rules
+### 4.4 Validation 규칙
 
-HeartSound `data` files must contain:
+HeartSound `data` 파일은 다음 column을 반드시 포함해야 한다.
 
 - `Time_Index`
 - `Amplitude`
@@ -115,57 +117,57 @@ HeartSound `data` files must contain:
 - `S2-Start_RS_Score`
 - `S2-End_RS_Score`
 
-Wave files:
+Wave 파일:
 
-- `.wav` only
+- `.wav`만 허용
 
-Unsupervised files must contain:
+Unsupervised 파일은 다음 column을 반드시 포함해야 한다.
 
 - `Cycle Num`
 - `Cycle Start`
 - `Cycle End`
 - `Cluster`
 
-## 5. Panel Layout and General UI Structure
+## 5. Panel Layout 및 일반 UI 구조
 
-The tool supports one-panel and two-panel modes.
+이 도구는 one-panel mode와 two-panel mode를 지원한다.
 
-Each panel contains:
+각 panel은 다음 요소를 가진다.
 
-- a panel header
-- a chart area
-- an optional parameter area below the chart
+- panel header
+- chart area
+- chart 아래의 optional parameter area
 
-Panel header contents:
+Panel header 구성:
 
 - panel title
-- current assigned data filename
-- linked `Wave`, `Parameter`, and `Unsupervised` file labels when available
-- centered audio playback controls
-- right-side panel action buttons
+- 현재 할당된 data filename
+- 연결된 `Wave`, `Parameter`, `Unsupervised` 파일 label
+- 중앙 audio playback controls
+- 우측 panel action buttons
 
 Panel action controls:
 
-- `Default`
-  Restores default visible series configuration.
+- `Default`  
+  기본 visible series 설정으로 복원
 
-- `Detail`
-  Opens the series picker modal.
+- `Detail`  
+  series picker modal 열기
 
-- parameter toggle button
-  Shows or hides the parameter section.
+- parameter toggle button  
+  parameter section 표시/숨김
 
-- settings button
-  Opens panel settings.
+- settings button  
+  panel settings 열기
 
-- reset button
-  Resets the panel.
+- reset button  
+  panel 초기화
 
-## 6. Series Visibility and Display Controls
+## 6. Series 가시성 및 표시 제어
 
-### 6.1 Default visible series for HeartSound
+### 6.1 HeartSound의 기본 visible series
 
-Current default visible series:
+현재 기본 visible series:
 
 - `Amplitude`
 - `S1 Area`
@@ -173,7 +175,7 @@ Current default visible series:
 - `S3 Candidates`
 - `S4 Candidates`
 
-Default hidden series:
+기본 hidden series:
 
 - `S1-Start_RS_Score`
 - `S1-End_RS_Score`
@@ -182,15 +184,15 @@ Default hidden series:
 
 ### 6.2 Detail modal
 
-The `Detail` button opens a modal for per-panel series visibility.
+`Detail` 버튼은 panel별 series visibility를 제어하는 modal을 연다.
 
-Behavior:
+동작:
 
-- contains a top-level `All` checkbox
-- contains individual checkboxes for each visible series supported by the current workspace
-- toggles series on or off without altering unrelated panel state
+- 최상단 `All` checkbox 포함
+- 현재 workspace에서 지원하는 각 visible series별 checkbox 포함
+- 다른 panel state에는 영향 없이 개별 series만 on/off 가능
 
-For HeartSound, the series list includes:
+HeartSound에서 보이는 series 목록:
 
 - `Amplitude`
 - `S1 Area`
@@ -202,20 +204,20 @@ For HeartSound, the series list includes:
 - `S2-Start_RS_Score`
 - `S2-End_RS_Score`
 
-### 6.3 Secondary axis behavior
+### 6.3 Secondary axis 동작
 
-For HeartSound, the right-side secondary axis is shown only when at least one RS score series is visible:
+HeartSound에서는 아래 RS score series 중 하나라도 visible일 때만 오른쪽 secondary axis가 표시된다.
 
 - `S1-Start_RS_Score`
 - `S1-End_RS_Score`
 - `S2-Start_RS_Score`
 - `S2-End_RS_Score`
 
-If all four are hidden, the secondary axis is hidden.
+네 개가 모두 hidden이면 secondary axis도 숨겨진다.
 
-## 7. HeartSound Plot Behavior
+## 7. HeartSound Plot 동작
 
-HeartSound chart currently supports:
+현재 HeartSound chart가 지원하는 요소:
 
 - amplitude waveform line
 - RS score bar overlays
@@ -228,115 +230,115 @@ HeartSound chart currently supports:
 - unsupervised cycle overlay
 - audio playhead overlay
 
-## 8. S1 and S2 Area Detection
+## 8. S1 및 S2 Area 검출
 
 ### 8.1 Source signals
 
-S1 and S2 areas are built from the four RS-score channels:
+S1과 S2 area는 다음 네 개의 RS-score channel을 기반으로 구성된다.
 
 - `S1-Start_RS_Score`
 - `S1-End_RS_Score`
 - `S2-Start_RS_Score`
 - `S2-End_RS_Score`
 
-### 8.2 Peak extraction
+### 8.2 Peak 추출
 
-For each RS-score channel:
+각 RS-score channel에 대해:
 
-- the signal is segmented into contiguous regions where score is at least the threshold
-- the best local peak is chosen per contiguous region
+- score가 threshold 이상인 contiguous region으로 signal을 분할
+- 각 contiguous region마다 가장 좋은 local peak를 하나 선택
 
-Current threshold:
+현재 threshold:
 
 - `15`
 
-### 8.3 Area construction
+### 8.3 Area 구성
 
-For S1:
+S1의 경우:
 
-- pair `S1 start peaks` with the next compatible `S1 end peak`
+- `S1 start peaks`를 이후의 compatible한 `S1 end peak`와 pairing
 
-For S2:
+S2의 경우:
 
-- pair `S2 start peaks` with the next compatible `S2 end peak`
+- `S2 start peaks`를 이후의 compatible한 `S2 end peak`와 pairing
 
-Maximum allowed region width is derived from estimated cycle spacing:
+최대 허용 region width는 추정된 cycle spacing으로부터 계산된다.
 
-- region width must not exceed `45%` of estimated cycle spacing
+- region width는 estimated cycle spacing의 `45%`를 넘을 수 없음
 
-### 8.4 Overlap resolution
+### 8.4 Overlap 해소
 
-If an S1 area and an S2 area overlap:
+S1 area와 S2 area가 겹치면:
 
-- both are not kept
-- the stronger one is retained
-- strength is based on the stronger peak score inside the overlay
+- 둘 다 유지하지 않음
+- 더 강한 쪽만 유지
+- strength는 해당 overlay 내부의 더 강한 peak score를 기준으로 판단
 
-This produces non-overlapping resolved S1 and S2 area overlays.
+이 과정을 통해 겹치지 않는 resolved S1/S2 area overlay가 생성된다.
 
-### 8.5 Current visual styling
+### 8.5 현재 시각 스타일
 
 - `S1 Area`
-  - green-toned translucent band
+  - 녹색 계열의 반투명 band
 
 - `S2 Area`
-  - red-toned translucent band
+  - 빨간색 계열의 반투명 band
 
-## 9. S3 and S4 Candidate Detection
+## 9. S3 및 S4 Candidate 검출
 
-S3 and S4 are currently treated as amplitude-based candidates, not as confirmed diagnoses.
+현재 S3와 S4는 **확정 진단**이 아니라 **amplitude 기반 candidate**로 취급된다.
 
 ### 9.1 Signal basis
 
-Candidate detection uses:
+Candidate detection은 다음을 사용한다.
 
-- the currently displayed `Amplitude` signal
-- already resolved `S1` and `S2` areas
+- 현재 표시 중인 `Amplitude` signal
+- 이미 resolve된 `S1` 및 `S2` area
 
-### 9.2 Diastolic interpretation
+### 9.2 Diastolic 해석
 
-Detection is built on the interval:
+검출은 다음 interval을 기준으로 한다.
 
 - `S2_end -> next_S1_start`
 
-Current conceptual interpretation:
+현재 개념적 해석:
 
-- `S3`
-  early diastolic candidate after S2
+- `S3`  
+  S2 이후 early diastolic candidate
 
-- `S4`
-  late diastolic candidate before the next S1
+- `S4`  
+  다음 S1 직전 late diastolic candidate
 
-### 9.3 Current default timing windows
+### 9.3 현재 기본 timing window
 
-Current fixed windows:
+현재 고정 window:
 
-- `S3`
-  from `S2 + 120 ms` to `S2 + 200 ms`
+- `S3`  
+  `S2 + 120 ms`부터 `S2 + 200 ms`까지
 
-- `S4`
-  from `next S1 - 200 ms` to `next S1 - 80 ms`
+- `S4`  
+  `next S1 - 200 ms`부터 `next S1 - 80 ms`까지
 
-Fallback diastolic-ratio windows:
+Fallback diastolic-ratio window:
 
-- `S3`
-  front part of diastole, roughly `18% -> 34%`
+- `S3`  
+  diastole 앞부분, 대략 `18% -> 34%`
 
-- `S4`
-  late part of diastole, roughly `72% -> 88%`
+- `S4`  
+  diastole 뒷부분, 대략 `72% -> 88%`
 
-### 9.4 Current candidate detection method
+### 9.4 현재 candidate detection 방식
 
-The current detector:
+현재 detector는 다음 절차를 따른다.
 
-- smooths absolute amplitude
-- estimates a robust amplitude scale
-- computes deviations over local baseline
-- requires a minimum duration
-- merges nearby candidate fragments
-- chooses the strongest candidate inside each window
+- absolute amplitude smoothing
+- robust amplitude scale 추정
+- local baseline 대비 deviation 계산
+- minimum duration 조건 적용
+- 가까운 candidate fragment 병합
+- 각 window 내부에서 가장 강한 candidate 하나 선택
 
-Config currently used in frontend:
+현재 frontend에서 사용하는 config:
 
 - fallback sample rate: `8000`
 - smoothing window: `12 ms`
@@ -344,135 +346,135 @@ Config currently used in frontend:
 - merge distance: `20 ms`
 - noise standard deviation multiplier: `2.4`
 - minimum absolute threshold: `1e-4`
-- candidate distance floor between S3 and S4: user-configurable, default `120 ms`
-- S3 delta threshold ratio: default `0.10`
-- S4 delta threshold ratio: default `0.10`
+- S3와 S4 사이 candidate distance floor: user-configurable, 기본 `120 ms`
+- S3 delta threshold ratio: 기본 `0.10`
+- S4 delta threshold ratio: 기본 `0.10`
 
 ### 9.5 S3/S4 ordering normalization
 
-After initial detection:
+초기 검출 이후:
 
-- S3 is forced to remain in the early half of diastole
-- S4 is forced to remain in the late half of diastole
-- if ordering is reversed, labels are normalized
-- if S3 and S4 are too close, only the stronger candidate remains
+- S3는 diastole 전반부에 남도록 강제
+- S4는 diastole 후반부에 남도록 강제
+- 순서가 뒤바뀌면 label을 normalization
+- S3와 S4가 너무 가까우면 더 강한 candidate만 유지
 
-### 9.6 Current S3/S4 visual styling
+### 9.6 현재 S3/S4 시각 스타일
 
-S3 and S4 are displayed as:
+S3와 S4는 다음 형태로 표시된다.
 
-- red outlined boxes
-- no interior fill
-- white small label placed above the box
+- 빨간 outline box
+- 내부 fill 없음
+- box 위쪽에 작은 흰색 label 표시
 
-Current labels:
+현재 label:
 
 - `S3`
 - `S4`
 
 ### 9.7 Visibility controls
 
-The following series can be toggled:
+다음 series를 on/off 할 수 있다.
 
 - `Show S3 Candidates`
 - `Show S4 Candidates`
 
-Both are enabled by default.
+둘 다 기본값은 enabled이다.
 
 ### 9.8 Runtime tuning command
 
-The search box supports the `/search` command for S3/S4 candidate thresholds:
+검색창은 S3/S4 candidate threshold 조정을 위한 `/search` command를 지원한다.
 
-- `/search`
-  shows current S3/S4 settings
+- `/search`  
+  현재 S3/S4 설정 표시
 
-- `/search reset`
-  resets candidate settings to default
+- `/search reset`  
+  candidate 설정을 기본값으로 초기화
 
-- `/search s3=... s4=... gap=...`
-  updates threshold ratios and minimum S3/S4 separation
+- `/search s3=... s4=... gap=...`  
+  threshold ratio와 최소 S3/S4 separation 값 갱신
 
 ## 10. Audio / Wave Workflow
 
-### 10.1 Upload and linking
+### 10.1 Upload 및 linking
 
-Wave files are uploaded through the `Wave` file role.
+Wave 파일은 `Wave` file role로 업로드한다.
 
-When a `data` file is assigned to a panel:
+`data` 파일이 panel에 할당되면:
 
 - matching `wave`
 - matching `parameter`
 - matching `unsupervised`
 
-files are auto-linked using the existing filename-base matching rule.
+파일들이 기존 filename-base matching rule에 따라 자동 연결된다.
 
 ### 10.2 Panel wave label
 
-If a wave file is linked, the panel header shows:
+Wave 파일이 연결되어 있으면 panel header에 다음과 같이 표시된다.
 
 - `Wave: <filename>`
 
 ### 10.3 Playback controls
 
-The center of the panel header contains:
+Panel header 중앙에는 다음 controls가 있다.
 
-- back 5 seconds
+- 5초 뒤로
 - play / pause
-- forward 5 seconds
-- reset to 0 seconds
+- 5초 앞으로
+- 0초로 reset
 - slow-speed cycle button
 
-Current speed options:
+현재 speed option:
 
 - `1x`
 - `0.75x`
 - `0.5x`
 - `0.25x`
 
-The speed button cycles through those values.
+speed 버튼을 누를 때마다 순환한다.
 
-### 10.4 Playback behavior
+### 10.4 Playback 동작
 
-Current implemented behavior:
+현재 구현된 동작:
 
-- play / pause toggles the assigned wave file
-- if the playhead is outside the visible graph range, play/pause first brings it into view
-- rewind and forward seek by 5 seconds
-- reset returns audio to `0s`
-- reset also moves the graph viewport back to the origin
-- if playback reaches the end:
-  - audio resets to the start
-  - graph viewport also resets to the start
+- play / pause는 할당된 wave 파일을 재생/정지
+- playhead가 현재 visible graph range 밖에 있으면, play/pause 전에 먼저 보이는 범위 안으로 이동
+- rewind/forward는 5초 단위로 seek
+- reset은 audio를 `0s`로 되돌림
+- reset 시 graph viewport도 시작점으로 이동
+- playback이 끝에 도달하면:
+  - audio는 처음으로 reset
+  - graph viewport도 처음으로 reset
 
 ### 10.5 Public wave serving
 
-Backend exposes uploaded wave files through the file endpoint and serves them with `audio/wav` media type.
+Backend는 업로드된 wave 파일을 file endpoint로 노출하며 `audio/wav` media type으로 제공한다.
 
 ### 10.6 Playhead
 
-The old red dotted marker is no longer used for playback.
+기존의 빨간 점선 marker는 더 이상 playback에 사용되지 않는다.
 
-Current playback indicator is a unified custom playhead overlay:
+현재 playback indicator는 통합된 custom playhead overlay이다.
 
-- red vertical line
-- red round handle at the top
+- 빨간 세로선
+- 상단의 빨간 둥근 handle
 
-They move as one structure.
+이 둘은 하나의 구조처럼 함께 움직인다.
 
 ### 10.7 Playhead interaction
 
-Current implemented interaction:
+현재 구현된 interaction:
 
-- the playhead moves during playback
-- the handle can be dragged horizontally
-- dragging updates audio current time
-- audio seek operations move the playhead and the graph view together when needed
+- playback 중 playhead 이동
+- handle을 좌우로 drag 가능
+- drag 시 audio current time 갱신
+- audio seek이 발생하면 필요 시 playhead와 graph view가 함께 이동
 
-### 10.8 Graph follow behavior
+### 10.8 Graph follow 동작
 
-Wave navigation and graph viewport are linked.
+Wave navigation과 graph viewport는 연동된다.
 
-Implemented follow cases:
+구현된 follow case:
 
 - play / pause visibility correction
 - rewind
@@ -481,114 +483,114 @@ Implemented follow cases:
 - end-of-track reset
 - playhead drag
 
-For cycle selection:
+Cycle 선택 시:
 
-- selecting a cycle moves the graph viewport if the cycle is outside the current visible range
+- 선택한 cycle이 현재 visible range 밖에 있으면 graph viewport를 이동시킴
 
-## 11. Parameter Panel Structure
+## 11. Parameter Panel 구조
 
-### 11.1 General behavior
+### 11.1 일반 동작
 
-The lower panel section is the `Parameter window`.
+하단 panel section은 `Parameter window`이다.
 
-It can be shown or hidden with the parameter toggle in the panel header.
+Panel header의 parameter toggle로 표시/숨김할 수 있다.
 
-It contains:
+구성 요소:
 
 - cycle controls
 - cycle highlight toggle
 - unsupervised overlay toggle
-- heartsound parameter sections or ECG parameter summary groups
+- heartsound parameter sections 또는 ECG parameter summary groups
 
-The chart / parameter split is vertically resizable by dragging the horizontal split handle.
+chart와 parameter 영역 사이의 분할은 horizontal split handle을 drag해서 세로 방향으로 조절할 수 있다.
 
-### 11.2 Header controls inside the parameter window
+### 11.2 Parameter window 내부 header controls
 
-Current controls:
+현재 controls:
 
-- `Cycle` checkbox
-  toggles selected cycle highlight on the graph
+- `Cycle` checkbox  
+  그래프에서 selected cycle highlight on/off
 
-- `Unsupervised` checkbox
-  toggles unsupervised cycle overlay on the graph
+- `Unsupervised` checkbox  
+  그래프에서 unsupervised cycle overlay on/off
 
-- current row range text
+- 현재 row range text
 
 ### 11.3 Heartsound parameter layout
 
-For heartsound, the parameter UI is custom and currently divided into top-level sections:
+Heartsound의 parameter UI는 custom 구조이며 현재 다음 top-level section으로 나뉜다.
 
 - `S1`
 - `S2`
 - `S1-S2`
 - `RS Score`
 
-In addition:
+추가로:
 
-- `HR` is displayed separately next to the cycle selector instead of appearing as a normal metric card inside the section list
+- `HR`은 일반 metric card처럼 section 내부에 들어가지 않고 cycle selector 옆에 별도로 표시된다.
 
 ### 11.4 HR card
 
-Current HR display:
+현재 HR 표시 방식:
 
 - label: `HR`
-- value example: `72 bpm`
-- separate card to the right of cycle controls
-- visually emphasized using a distinct highlighted color theme
+- value 예시: `72 bpm`
+- cycle controls 오른쪽의 별도 card
+- 시각적으로 강조된 고유 color theme 사용
 
-The HR card is clickable and participates in graph measurement annotation.
+HR card는 클릭 가능하며 graph measurement annotation에도 참여한다.
 
-### 11.5 Parameter card content
+### 11.5 Parameter card 내용
 
-Each heartsound parameter card currently shows:
+현재 각 heartsound parameter card는 다음을 표시한다.
 
 - metric label
-- current selected cycle value
-- unit inline beside the value when applicable
+- 현재 선택된 cycle의 value
+- unit이 있으면 값 옆에 inline으로 표시
 
-Current values do not show min-max range bars or gauges.
+현재 값 표시에 min-max range bar나 gauge는 없다.
 
-### 11.6 Hover tooltip explanation
+### 11.6 Hover tooltip 설명
 
-Parameter cards now support hover tooltips.
+Parameter card는 hover tooltip을 지원한다.
 
-Tooltip contents:
+Tooltip 내용:
 
-- short title
-- short plain-language measurement summary
-- small schematic string
+- 짧은 title
+- 쉬운 표현의 measurement 설명
+- 작은 schematic string
 
-Current tooltip style:
+현재 tooltip style:
 
-- dark floating box
-- shown on hover or focus
-- also available on the `HR` card
+- 어두운 floating box
+- hover 또는 focus 시 표시
+- `HR` card에도 동일하게 적용
 
-### 11.7 Current tooltip wording style
+### 11.7 현재 tooltip 문구 스타일
 
-Tooltip wording is intentionally short.
+Tooltip wording은 의도적으로 짧게 유지한다.
 
-Examples:
+예시:
 
 - `S1 start ~ S1 end`
 - `S1 peak ~ S2 peak`
 - `peak 50% height contiguous width`
 
-## 12. Current Derived HeartSound Parameter Extraction
+## 12. 현재 파생 HeartSound Parameter 추출
 
-HeartSound parameters are currently derived directly from the `data` file rather than requiring a separate uploaded parameter file.
+현재 HeartSound parameter는 별도의 parameter 파일 업로드 없이, `data` 파일에서 직접 파생된다.
 
-### 12.1 Sampling assumptions
+### 12.1 Sampling 가정
 
-Current backend assumptions:
+현재 backend 가정:
 
 - `SamplingRate = 4000 Hz`
 - `1 sample = 0.25 ms`
 - amplitude signal unit = `mV`
 
-### 12.2 Derived column families
+### 12.2 파생 column family
 
-Current derived families:
+현재 파생되는 family:
 
 - S1 parameters
 - S2 parameters
@@ -600,7 +602,7 @@ Current derived families:
 
 ### 12.3 S1 parameter columns
 
-Current extracted columns:
+현재 추출되는 column:
 
 - `S1_Duration_ms`
 - `S1_Peak_mV`
@@ -611,35 +613,35 @@ Current extracted columns:
 - `S1_S_centroid_pct`
 - `S1_E_centroid_pct`
 
-Current formulas:
+현재 공식:
 
-- `Duration`
+- `Duration`  
   `(S1_end - S1_start) * 0.25`
 
-- `Peak`
+- `Peak`  
   `max(abs(x[S1_start:S1_end]))`
 
-- `Mean`
+- `Mean`  
   `mean(abs(x[S1_start:S1_end]))`
 
-- `RMS`
+- `RMS`  
   `sqrt(mean(x^2))`
 
-- `Area`
+- `Area`  
   `sum(abs(x)) * 0.25`
 
-- `Middle`
-  midpoint of start and end, converted to ms
+- `Middle`  
+  start와 end의 midpoint를 ms로 변환
 
-- `Start centroid percent`
-  bias of weighted centroid toward the start half
+- `Start centroid percent`  
+  weighted centroid가 시작 쪽 절반에 얼마나 치우치는지
 
-- `End centroid percent`
-  bias of weighted centroid toward the end half
+- `End centroid percent`  
+  weighted centroid가 끝 쪽 절반에 얼마나 치우치는지
 
 ### 12.4 S2 parameter columns
 
-Current extracted columns:
+현재 추출되는 column:
 
 - `S2_Duration_ms`
 - `S2_Peak_mV`
@@ -650,11 +652,11 @@ Current extracted columns:
 - `S2_S_centroid_pct`
 - `S2_E_centroid_pct`
 
-Formulas mirror the S1 calculation pattern.
+공식은 S1과 동일한 계산 패턴을 따른다.
 
 ### 12.5 S1/S2 relation parameter columns
 
-Current extracted columns:
+현재 추출되는 column:
 
 - `S1_S_to_S2_S_ms`
 - `S1_E_to_S2_S_ms`
@@ -663,243 +665,243 @@ Current extracted columns:
 - `S1_S_to_S2_E_ms`
 - `S1_peak_to_S2_peak_ms`
 
-These describe inter-event distances between:
+이 값들은 다음 landmark 간 거리를 나타낸다.
 
-- starts
-- ends
-- midpoints
-- local absolute peaks
+- start 간 거리
+- end 간 거리
+- midpoint 간 거리
+- local absolute peak 간 거리
 
 ### 12.6 Heart rate
 
-Current extracted column:
+현재 추출되는 column:
 
 - `HeartRate_bpm`
 
-Current formula:
+현재 공식:
 
 - `60000 / (next_S1_start - S1_start in ms)`
 
 ### 12.7 RS Peak parameter columns
 
-Current extracted columns:
+현재 추출되는 column:
 
 - `S1S_RS_Peak`
 - `S1E_RS_Peak`
 - `S2S_RS_Peak`
 - `S2E_RS_Peak`
 
-Meaning:
+의미:
 
-- the raw RS-score value at the selected representative event index
+- 선택된 representative event index에서의 raw RS-score value
 
 ### 12.8 RS Width parameter columns
 
-Current extracted columns:
+현재 추출되는 column:
 
 - `S1S_RS_Width_ms`
 - `S1E_RS_Width_ms`
 - `S2S_RS_Width_ms`
 - `S2E_RS_Width_ms`
 
-Meaning:
+의미:
 
-- the contiguous width around the selected event peak where RS score stays above 50% of peak height
+- event peak 주변에서 RS score가 peak height의 50% 이상인 contiguous width
 
 ### 12.9 RS STD parameter columns
 
-Current extracted columns:
+현재 추출되는 column:
 
 - `S1S_RS_STD`
 - `S1E_RS_STD`
 - `S2S_RS_STD`
 - `S2E_RS_STD`
 
-Meaning:
+의미:
 
-- weighted temporal spread standard deviation around the event peak
+- event peak 주변의 weighted temporal spread standard deviation
 
-Current local window:
+현재 local window:
 
 - `+-80 samples`
-- equivalent to `+-20 ms` at `4000 Hz`
+- `4000 Hz` 기준 `+-20 ms`
 
-## 13. Cycle Definition and Cycle Validation
+## 13. Cycle 정의 및 Cycle Validation
 
-### 13.1 Current cycle definition
+### 13.1 현재 cycle 정의
 
-A valid cycle is currently defined as:
+현재 valid cycle은 다음으로 정의된다.
 
-- current `S1_start`
-- current `S1_end`
-- matched `S2_start`
-- matched `S2_end`
-- next `S1_start`
+- 현재 `S1_start`
+- 현재 `S1_end`
+- 매칭된 `S2_start`
+- 매칭된 `S2_end`
+- 다음 `S1_start`
 
-In words:
+즉:
 
-- cycle `n` starts at `S1_start(n)`
-- cycle `n` ends at `next_S1_start(n)`
+- cycle `n`은 `S1_start(n)`에서 시작
+- cycle `n`은 `next_S1_start(n)`에서 끝남
 
-### 13.2 Required ordering rule
+### 13.2 필수 ordering rule
 
-A cycle is considered valid only if:
+다음 순서를 만족할 때만 cycle을 valid로 간주한다.
 
 - `S1_start < S1_end < S2_start < S2_end < next_S1_start`
 
-This rule is now explicitly enforced.
+이 규칙은 현재 명시적으로 강제된다.
 
 ### 13.3 S2 matching rule
 
-For each S1:
+각 S1에 대해:
 
-- the tool searches forward for the first S2 whose:
-  - `S2_start` is after `S1_end`
-  - `S2_end` is after `S2_start`
-  - `S2_end` is before `next_S1_start`
+- 아래 조건을 만족하는 첫 번째 S2를 forward search한다.
+  - `S2_start`가 `S1_end` 이후
+  - `S2_end`가 `S2_start` 이후
+  - `S2_end`가 `next_S1_start` 이전
 
-### 13.4 Last-cycle behavior
+### 13.4 Last-cycle 동작
 
-If the final S1 has no following valid S2 and no following S1:
+마지막 S1에 대해 유효한 다음 S2도 없고 다음 S1도 없으면:
 
-- the last row may exist in the derived frame
-- but it is not considered a valid cycle for the main cycle list shown to the user
+- 파생 frame에는 마지막 row가 존재할 수 있음
+- 하지만 UI에서 보여주는 main cycle list의 valid cycle로는 포함되지 않음
 
-### 13.5 Cycle list shown in the UI
+### 13.5 UI에 표시되는 cycle list
 
-Current behavior:
+현재 동작:
 
-- the cycle selector now uses the full list of valid cycles for the file
-- it is no longer restricted to the currently visible graph page
-- when the parameter summary is refreshed, the currently visible graph range is used only to choose the default selected cycle
+- cycle selector는 파일 전체의 valid cycle list를 사용
+- 더 이상 현재 visible graph page로 제한되지 않음
+- parameter summary refresh 시, 현재 visible graph range는 기본 selected cycle을 고르는 데만 사용됨
 
-### 13.6 Cycle highlight on the chart
+### 13.6 그래프에서의 cycle highlight
 
-When the `Cycle` checkbox is enabled:
+`Cycle` checkbox가 enabled일 때:
 
-- the selected cycle is shown as an outlined box on the chart
+- 선택된 cycle이 그래프에서 outlined box로 표시된다.
 
-Current styling:
+현재 style:
 
-- no fill
-- strong outline
+- fill 없음
+- 강한 outline
 - label `Cycle`
 
-The selected cycle uses:
+선택된 cycle의 범위:
 
 - `startIndex = current S1_start`
 - `endIndex = next_S1_start`
 
 ## 14. Parameter-to-Graph Measurement Annotation
 
-Clicking a heartsound parameter card creates a graph annotation similar in spirit to the unsupervised measurement style.
+Heartsound parameter card를 클릭하면 unsupervised measurement style과 유사한 graph annotation이 생성된다.
 
-Current implemented behavior by metric type:
+현재 metric type별 구현 동작:
 
-- `S1_*`
-  shows the S1 range
+- `S1_*`  
+  S1 range 표시
 
-- `S2_*`
-  shows the S2 range
+- `S2_*`  
+  S2 range 표시
 
-- `S1-S2 relation`
-  shows the measured interval between the corresponding landmarks
+- `S1-S2 relation`  
+  해당 landmark 간 측정 interval 표시
 
-- `HeartRate_bpm`
-  shows the current cycle-to-next-cycle interval
+- `HeartRate_bpm`  
+  현재 cycle에서 다음 cycle까지의 interval 표시
 
-- `RS Peak`
-  shows the selected RS event point
+- `RS Peak`  
+  선택된 RS event point 표시
 
-- `RS Width`
-  shows the 50%-height width bounds around the selected RS event peak
+- `RS Width`  
+  선택된 RS event peak 주변의 50%-height width bound 표시
 
-- `RS STD`
-  shows the local RS spread window
+- `RS STD`  
+  local RS spread window 표시
 
-The selected metric card gets an active state.
+선택된 metric card는 active state가 된다.
 
-## 15. Unsupervised Overlay Behavior
+## 15. Unsupervised Overlay 동작
 
-Unsupervised data can be linked to a panel.
+Unsupervised 데이터는 panel에 연결될 수 있다.
 
-Current behavior:
+현재 동작:
 
-- unsupervised cycles are loaded for the visible range
-- an `Unsupervised` checkbox in the parameter header toggles graph overlay visibility
-- unsupervised overlays remain distinct from selected cycle and parameter measurement overlays
+- visible range에 해당하는 unsupervised cycle을 로딩
+- parameter header의 `Unsupervised` checkbox로 graph overlay visibility를 제어
+- unsupervised overlay는 selected cycle 및 parameter measurement overlay와 구분되어 유지됨
 
-## 16. Keyboard Behavior
+## 16. Keyboard 동작
 
-Current implemented keyboard behavior:
+현재 구현된 keyboard 동작:
 
-- `ArrowLeft`
-  moves the graph range left
+- `ArrowLeft`  
+  graph range를 왼쪽으로 이동
 
-- `ArrowRight`
-  moves the graph range right
+- `ArrowRight`  
+  graph range를 오른쪽으로 이동
 
-- `[` 
-  moves to the previous cycle in the current heartsound panel
+- `[`  
+  현재 heartsound panel에서 이전 cycle로 이동
 
-- `]`
-  moves to the next cycle in the current heartsound panel
+- `]`  
+  현재 heartsound panel에서 다음 cycle로 이동
 
 Cycle keyboard navigation:
 
-- uses the current full cycle list
-- updates selected cycle
-- also moves the graph viewport if the selected cycle is outside the visible graph range
+- 현재 full cycle list 기준으로 동작
+- selected cycle을 갱신
+- 선택한 cycle이 visible graph range 밖이면 viewport도 함께 이동
 
 Arrow navigation:
 
-- shifts graph range by a fixed step
-- delays heavier linked summary refresh until movement settles
+- graph range를 고정 step만큼 이동
+- 무거운 linked summary refresh는 이동이 멈춘 뒤 지연 반영
 
-## 17. Graph Range and Viewport Behavior
+## 17. Graph Range 및 Viewport 동작
 
-Current implemented range features:
+현재 구현된 range 기능:
 
-- panel keeps current `rangeStart` and `rangeEnd`
-- parameter and unsupervised summaries are linked to the visible graph range
-- when a cycle is selected and it is outside the visible viewport, the viewport recenters so the cycle becomes visible
+- panel은 현재 `rangeStart`와 `rangeEnd`를 유지
+- parameter 및 unsupervised summary는 visible graph range와 연동
+- cycle을 선택했을 때 현재 viewport 밖에 있으면 cycle이 보이도록 viewport를 recenter
 
-For full-resolution heartsound playback:
+Full-resolution heartsound playback의 경우:
 
-- full-resolution data can be kept in memory
-- the chart viewport can be moved without always refetching plot data
+- full-resolution data를 memory에 유지할 수 있음
+- chart viewport를 이동할 때 항상 plot data를 다시 fetch할 필요는 없음
 
-## 18. Sharing Behavior
+## 18. Sharing 동작
 
-The public share flow currently works as follows:
+현재 public share flow는 다음과 같다.
 
-1. `./share` verifies frontend availability.
-2. It resolves or downloads `cloudflared`.
-3. It starts a detached tunnel process.
-4. It waits for a `trycloudflare.com` URL.
-5. It stores the URL in the runtime share URL file.
-6. It prints the URL in the terminal.
-7. It copies the URL to the clipboard automatically on macOS.
+1. `./share`가 frontend availability를 확인한다.
+2. `cloudflared`를 찾거나 다운로드한다.
+3. detached tunnel process를 시작한다.
+4. `trycloudflare.com` URL이 나올 때까지 대기한다.
+5. 해당 URL을 runtime share URL 파일에 저장한다.
+6. terminal에 URL을 출력한다.
+7. macOS clipboard에 URL을 자동 복사한다.
 
-If a share tunnel is already running:
+이미 share tunnel이 실행 중이라면:
 
-- the stored share URL is reprinted
-- the same URL is copied to the clipboard again
+- 저장된 share URL을 다시 출력
+- 같은 URL을 다시 clipboard에 복사
 
-## 19. File Storage and Persistence
+## 19. 파일 저장 및 Persistence
 
-Current storage locations:
+현재 storage 위치:
 
-- uploaded files:
+- uploaded files:  
   `/Users/ms/Desktop/Tool/backend/storage/uploads`
 
-- metadata database:
+- metadata database:  
   `/Users/ms/Desktop/Tool/backend/storage/heartsound.db`
 
-- launcher runtime files:
+- launcher runtime files:  
   `/Users/ms/Desktop/Tool/.launcher`
 
-Metadata persisted for uploaded files includes:
+업로드 파일에 대해 저장되는 metadata:
 
 - original filename
 - stored filename
@@ -910,78 +912,78 @@ Metadata persisted for uploaded files includes:
 - file size
 - upload timestamp
 
-## 20. Current HeartSound Derived-Parameter Summary Source Rule
+## 20. 현재 HeartSound Derived-Parameter Summary Source Rule
 
-For heartsound panels:
+Heartsound panel에서는:
 
-- the parameter window is fed from the active `data` file
-- not from a manually uploaded heartsound parameter file
+- parameter window가 active `data` 파일을 source로 사용
+- 수동 업로드한 heartsound parameter 파일을 source로 사용하지 않음
 
-That means:
+즉:
 
-- assigning a heartsound `data` file is enough to populate the parameter window
-- the panel still retains linked file labels, but the actual heartsound parameter summary source is the derived data summary
+- heartsound `data` 파일만 할당해도 parameter window가 채워짐
+- panel은 linked file label은 유지하지만, 실제 heartsound parameter summary source는 derived data summary이다.
 
-## 21. Current Visual Semantics Summary
+## 21. 현재 Visual Semantics 요약
 
-### 21.1 Main categories
+### 21.1 주요 category
 
-- `Amplitude`
-  main waveform
+- `Amplitude`  
+  메인 waveform
 
-- `S1 Area`
-  resolved S1 region
+- `S1 Area`  
+  resolve된 S1 region
 
-- `S2 Area`
-  resolved S2 region
+- `S2 Area`  
+  resolve된 S2 region
 
-- `S3`
+- `S3`  
   candidate box
 
-- `S4`
+- `S4`  
   candidate box
 
-- `Cycle`
+- `Cycle`  
   selected cycle box
 
-- `Parameter annotation`
-  selected metric measurement range or point
+- `Parameter annotation`  
+  선택된 metric의 measurement range 또는 point
 
-- `Wave playhead`
-  current audio position
+- `Wave playhead`  
+  현재 audio 위치
 
-### 21.2 Parameter sections
+### 21.2 Parameter section
 
 - `S1`
 - `S2`
 - `S1-S2`
 - `RS Score`
-- `HR` shown separately beside cycle controls
+- `HR`은 cycle controls 옆에 별도로 표시
 
-## 22. Current Scope Boundaries
+## 22. 현재 Scope 경계
 
-The following are implemented:
+현재 구현된 항목:
 
 - heartsound data upload
-- wave upload and playback
-- auto-linking support files
+- wave upload 및 playback
+- support file auto-linking
 - S1/S2 area detection
 - S3/S4 candidate detection
 - cycle-aware parameter extraction
-- parameter cards and graph annotations
+- parameter card 및 graph annotation
 - cycle navigation
 - keyboard cycle navigation
-- public share URL generation with clipboard copy
+- clipboard copy를 포함한 public share URL 생성
 
-The following are not part of the current derived-parameter implementation:
+현재 derived-parameter 구현에 포함되지 않는 항목:
 
 - frequency-domain parameter extraction
 - pathology labeling
 - confirmed S3/S4 diagnosis
 - ECG-driven S3/S4 validation
-- arbitrary user-defined parameter formulas from UI
+- UI에서의 arbitrary user-defined parameter formula
 
-## 23. Recommended Reference Files
+## 23. 권장 참고 파일
 
 Main frontend implementation:
 
@@ -995,12 +997,11 @@ Main backend implementation:
 - `backend/app/services/auth_service.py`
 - `backend/app/db.py`
 
-Launcher and sharing:
+Launcher 및 sharing:
 
 - `scripts/share.sh`
 - `scripts/common.sh`
 
-Top-level usage:
+최상위 사용 문서:
 
 - `README.md`
-
