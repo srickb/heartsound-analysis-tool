@@ -1,757 +1,643 @@
-# Product Requirements Document (PRD)
+# HeartSound Parameter Formula Reference
 
-Project: HeartSound Analysis Tool  
-Location: `/Users/ms/Desktop/Tool`  
-Document status: Derived from the current repository state on 2026-03-19  
-Authoring basis: Source code, launcher scripts, docs, process notes, and adjacent repository folders
+Last updated: 2026-03-19
 
-## 1. Executive Summary
+이 문서는 HeartSound workspace의 하단 `Parameter` panel에 현재 표시되는 parameter group을 설명한다.
 
-The Tool project is a local-first browser application for reviewing and analyzing biomedical signal files, with a strong current emphasis on heart sound analysis and a secondary ECG workspace.
+설명 범위는 **현재 코드에 실제로 구현된 formula**만을 대상으로 한다.
 
-At its current stage, the product combines:
-
-- file upload and file-role management
-- synchronized signal visualization
-- RS-score-guided heart sound event visualization
-- data-derived parameter extraction for heart sound cycles
-- optional wave playback synchronized with chart navigation
-- unsupervised cycle overlay review
-- local/private access control plus temporary public sharing
-
-The repository also includes an adjacent research-log automation subsystem and idea/spec folders that inform future product direction.
-
-The product is best understood as:
-
-- a research and review workstation
-- a clinician/researcher-facing signal inspection UI
-- a local launcher with optional public sharing
-- a growing foundation for richer parameter extraction, documentation, and reproducible workflows
-
-## 2. Product Context
-
-### 2.1 Why this product exists
-
-The product addresses the need to:
-
-- inspect heart sound and ECG data interactively
-- link raw signal, derived metrics, and audio playback in one workspace
-- review cycle-level events such as S1, S2, and candidate late/early diastolic abnormalities
-- avoid switching between spreadsheets, plotting scripts, audio players, and notebooks
-- support iterative research workflows locally without cloud dependency
-
-### 2.2 Current product posture
-
-The current product is not a generalized medical platform or a cloud SaaS system.
-It is currently a local workstation-style application with selective sharing and admin access control.
-
-### 2.3 Product maturity
-
-Current maturity is best described as:
-
-- implemented and usable for local research workflows
-- feature-rich in the HeartSound inspection path
-- still evolving in naming, reporting, and higher-level workflow formalization
-- partially supported by historical documents that include earlier concepts outside the current codebase
-
-## 3. Repository-Level Product Inventory
-
-This PRD reflects the full Tool repository, not only the currently visible UI.
-
-### 3.1 Top-level folders and roles
-
-- `frontend/`
-  Product UI, interaction logic, chart orchestration, playback control, modals, and per-panel state handling.
-
-- `backend/`
-  API, file ingestion, validation, plot preparation, parameter derivation, auth state, and SQLite persistence.
-
-- `scripts/`
-  Launcher, health, share, code generation, and process management scripts.
-
-- `docs/`
-  Project-facing documentation. Some files reflect earlier or adjacent concepts; they remain relevant as product context but not always as exact implementation truth.
-
-- `Auto_Github/`
-  Research-log automation subsystem for generating daily project logs. This is product-adjacent rather than a core end-user runtime feature.
-
-- `ideas/`
-  Design and calculation idea notes for future or evolving parameter systems and automation concepts.
-
-- `process/`
-  Generated process and product documentation folder. This PRD lives here.
-
-- `.launcher/`
-  Runtime state and launcher artifacts such as logs, PID files, tunnel URL file, and bundled helpers.
-
-## 4. Product Vision
-
-The long-term product vision implied by the repository is:
-
-> A local-first biomedical signal analysis workspace that lets a researcher or operator upload structured signal files, inspect event-aligned waveform behavior, review cycle-level derived parameters, align optional audio, and preserve research context with minimal operational friction.
-
-## 5. Primary Product Goals
-
-### 5.1 Current goals
-
-- Support practical HeartSound data review from uploaded RS-score signal files.
-- Make S1/S2 event structure visible without requiring custom scripts.
-- Provide cycle-level derived metrics directly from the data file.
-- Allow chart review and wave playback in one panel.
-- Let users review unsupervised cycle overlays in the same workspace.
-- Keep the tool easy to run locally.
-- Provide temporary public access when needed.
-
-### 5.2 Secondary goals
-
-- Maintain an ECG workspace using the same application shell.
-- Preserve a path for human-readable and machine-readable research logs.
-- Keep the system understandable and modifiable by a single researcher or small team.
-
-## 6. Non-Goals
-
-The current repository does not support, and this PRD does not assume:
-
-- diagnostic-grade medical decision support
-- automatic pathology confirmation
-- cloud multi-user collaboration
-- enterprise identity management
-- remote persistence beyond local files and SQLite
-- end-to-end ML training inside the UI
-- arbitrary no-code parameter authoring by end users
-
-## 7. Target Users
-
-### 7.1 Primary users
-
-- heart sound researchers
-- biomedical signal analysts
-- prototype tool operators
-- data reviewers comparing event candidates, derived metrics, and audio
-
-### 7.2 Secondary users
-
-- ECG reviewers using the same launcher and panel framework
-- developers maintaining or extending the repository
-- researchers who want daily research-log generation through repository evidence
-
-## 8. Core Product Pillars
-
-The repository currently supports four main pillars.
-
-### 8.1 Data ingestion and validation
-
-Users can upload structured files in defined roles and receive validation before using them in the interface.
-
-### 8.2 Interactive chart review
-
-Users can inspect amplitude data, RS-score signals, event areas, cycle highlights, and measurement overlays.
-
-### 8.3 Parameter understanding
-
-Users can view cycle-level derived parameters and click them to see the graph context from which they were calculated.
-
-### 8.4 Audio-context alignment
-
-Users can attach a wave file to a signal record and navigate the graph using playback controls and a draggable playhead.
-
-## 9. Product Scope by Folder
-
-### 9.1 `frontend/` product scope
-
-This folder implements the end-user application.
-
-Current responsibilities:
-
-- workspace switching
-- split-panel layout
-- file-role sidebar
-- chart rendering
-- parameter panel rendering
-- series visibility controls
-- admin/access UI
-- wave playback controls
-- cycle navigation
-- chart overlays and graph annotations
-- interaction state and fetch orchestration
-
-### 9.2 `backend/` product scope
-
-This folder implements the local service layer.
-
-Current responsibilities:
-
-- file upload validation
-- file metadata persistence
-- parameter summary generation
-- plot data preparation
-- heartsound derived parameter extraction
-- auth and access mode support
-- wave file serving
-
-### 9.3 `scripts/` product scope
-
-This folder implements local operational workflows.
-
-Current responsibilities:
-
-- start/stop local stack
-- health check
-- status reporting
-- one-time access code helper
-- public share tunnel creation
-- clipboard copy of the public URL
-
-### 9.4 `docs/` product scope
-
-This folder contains human-facing documentation and design traces.
-
-Role in product:
-
-- onboarding and launcher guidance
-- historical design direction
-- adjacent or earlier specification context
-
-### 9.5 `Auto_Github/` product scope
-
-This subsystem is not a direct runtime UI feature.
-It supports the research process around the product.
-
-Current capabilities:
-
-- generate human-readable daily markdown logs
-- generate structured JSON research logs
-- derive logs from commits, notes, and experiments
-
-### 9.6 `ideas/` product scope
-
-This folder captures future product logic and evolving design intent, especially around parameter extraction and automation.
-
-It is currently best treated as:
-
-- future design reference
-- low-confidence roadmap input
-- not the source of truth for shipped behavior
-
-## 10. Core User Flows
-
-### 10.1 Local startup flow
-
-1. User runs `./start`.
-2. Backend and frontend start locally.
-3. User opens the UI locally.
-4. Access mode determines whether immediate entry or one-time code entry is required.
-
-### 10.2 HeartSound analysis flow
-
-1. User selects the `HeartSound` workspace.
-2. User uploads a `data` file.
-3. User optionally uploads matching `wave` and `unsupervised` files.
-4. User assigns the `data` file to a panel.
-5. The panel auto-links support files when naming matches.
-6. The chart renders amplitude plus available overlays.
-7. The parameter window shows derived cycle parameters.
-8. User selects cycles and metrics to inspect graph context.
-9. User optionally uses wave playback to review audio-aligned behavior.
-
-### 10.3 Public review flow
-
-1. User runs `./share`.
-2. The system generates a public URL.
-3. The public URL is copied to the clipboard.
-4. If access mode is `code`, the user also generates a one-time code.
-5. An external reviewer can access the UI while the local share tunnel remains active.
-
-### 10.4 Daily research log flow
-
-1. Researcher works in the repository during the day.
-2. Optional notes and experiment files are created.
-3. The automation script reads repository activity.
-4. Daily markdown and structured JSON logs are generated when the day is meaningful.
-
-## 11. Product Functional Requirements
-
-### 11.1 Workspace management
-
-The product must:
-
-- support at least `HeartSound` and `ECG` workspaces
-- preserve panel state per panel
-- allow switching active workspace through the UI
-
-### 11.2 File-role management
-
-The product must:
-
-- support `data`, `wave`, `parameter`, and `unsupervised` file roles
-- validate files based on workspace and role
-- persist file metadata locally
-- show uploaded files in the sidebar
-- allow linking files to panels
-
-### 11.3 Auto-linking
-
-When a `data` file is assigned to a panel, the product should:
-
-- find matching `wave`
-- find matching `parameter`
-- find matching `unsupervised`
-
-based on existing filename-base matching logic.
-
-### 11.4 Chart rendering
-
-The product must render:
-
-- amplitude waveform
-- optional RS-score series
-- derived overlay regions
-- selected cycle highlight
-- parameter measurement overlays
-- unsupervised cycle overlays
-- audio playhead
-
-### 11.5 Parameter visibility
-
-The product must allow:
-
-- showing or hiding the parameter section
-- selecting cycles
-- selecting a parameter card
-- seeing the graph measurement for the selected parameter
-
-### 11.6 Audio playback
-
-The product must allow:
-
-- play / pause
-- seek backward 5 seconds
-- seek forward 5 seconds
-- reset to 0 seconds
-- slow playback rates
-- draggable playhead seeking
-
-### 11.7 Sharing
-
-The product must support:
-
-- local startup
-- local health/status visibility
-- one-time code generation
-- public URL generation through a tunnel
-- clipboard copy of the URL on macOS
-
-## 12. HeartSound-Specific Requirements
-
-### 12.1 Accepted HeartSound input
-
-HeartSound `data` files must contain:
-
-- `Time_Index`
-- `Amplitude`
-- `S1-Start_RS_Score`
-- `S1-End_RS_Score`
-- `S2-Start_RS_Score`
-- `S2-End_RS_Score`
-
-These inputs form the basis for all current heartsound runtime behavior.
-
-### 12.2 RS-score event visualization
-
-The product must support:
-
-- event-bar visualization for RS-score channels
-- independent toggles per event series
-- hiding the secondary axis when no RS-score series are visible
-
-### 12.3 S1/S2 area generation
-
-The product must construct S1 and S2 areas by:
-
-- thresholding RS-score signals
-- selecting local representative peaks
-- pairing compatible start/end peaks
-- limiting unreasonable region width
-- resolving S1/S2 overlap conflicts
-
-### 12.4 S3/S4 candidate support
-
-The product must support:
-
-- amplitude-based candidate detection only
-- no confirmed pathology claims
-- early diastolic S3 candidate windows
-- late diastolic S4 candidate windows
-- runtime threshold tuning using the search box
-- graph display as strong outlined boxes
-
-## 13. Cycle Model Requirements
-
-### 13.1 Valid cycle definition
-
-The current product requires a valid cycle to satisfy:
-
-- `S1_start < S1_end < S2_start < S2_end < next_S1_start`
-
-This rule is central to:
-
-- parameter extraction
-- cycle selection
-- cycle highlight display
-- HR calculation
-
-### 13.2 Cycle list behavior
-
-The product should expose the full list of valid cycles for the file, not only cycles that overlap the current graph page.
-
-The default selected cycle should still prefer the one overlapping the visible viewport when available.
-
-### 13.3 Cycle navigation
-
-Users should be able to move cycles using:
-
-- on-screen previous/next buttons
-- keyboard shortcuts:
-  - `[` previous cycle
-  - `]` next cycle
-
-### 13.4 Cycle viewport synchronization
-
-If a selected cycle is outside the visible graph range:
-
-- the graph viewport should move so the cycle becomes visible
-
-## 14. Derived Parameter Requirements
-
-### 14.1 Current parameter source policy
-
-For HeartSound, the product currently derives parameters directly from the `data` file.
-The main parameter workflow does not depend on uploading a separate parameter file.
-
-### 14.2 S1 parameter requirements
-
-The current product stores:
-
-- duration
-- peak
-- mean absolute amplitude
-- RMS
-- area
-- middle
-- start centroid percent
-- end centroid percent
-
-### 14.3 S2 parameter requirements
-
-The current product stores the S2 analogs of the S1 metric set.
-
-### 14.4 S1/S2 relation requirements
-
-The current product stores interval and relation metrics between:
-
-- start and start
-- end and start
-- midpoint and midpoint
-- end and end
-- start and end
-- local absolute peak and local absolute peak
-
-### 14.5 Heart rate requirement
-
-The product stores `HeartRate_bpm` from current S1 start to next S1 start.
-
-### 14.6 RS event parameter requirements
-
-The product stores:
-
-- RS Peak
-- RS Width
-- RS STD
-
-for:
-
-- S1 start
-- S1 end
-- S2 start
-- S2 end
-
-### 14.7 Invalid computation policy
-
-Where parameter calculation is not valid:
-
-- values must be stored as `NaN`
-- the product must not coerce invalid values to `0`
-
-## 15. Parameter UI Requirements
-
-### 15.1 Section structure
-
-The heartsound parameter window must present separate sections for:
+현재 UI의 top-level parameter 구성은 다음과 같다.
 
 - `S1`
 - `S2`
 - `S1-S2`
 - `RS Score`
 
-The `HR` display is intentionally separate from these sections.
+추가로:
 
-### 15.2 Card design
+- `HR`은 cycle selector 옆에 별도의 강조 카드로 표시된다.
 
-Each metric card should show:
+## 1. 공통 정의
 
-- metric name
-- current value
-- unit
+### 1.1 Input signal
 
-The UI should remain compact and readable.
+- `x[n]`  
+  HeartSound amplitude signal
 
-### 15.3 Hover help
+- unit:  
+  `mV`
 
-Each heartsound metric card should provide:
+### 1.2 Sampling
 
-- a short explanatory tooltip
-- a simple schematic
-- language that is concise rather than narrative
+현재 backend의 고정 Sampling 가정:
 
-### 15.4 Click-to-measure behavior
+- `fs = 4000 Hz`
+- `1 sample = 0.25 ms`
 
-Clicking a parameter should show where the measurement comes from on the chart.
+### 1.3 현재 cycle 정의
 
-This requirement is satisfied by:
+유효한 cycle은 다음 조건을 만족한다.
 
-- range annotations
-- point annotations
-- RS-window visual annotations
+- `S1_start < S1_end < S2_start < S2_end < next_S1_start`
 
-## 16. Wave UI Requirements
+Cycle의 시작점:
 
-### 16.1 Header-centered controls
+- `S1_start`
 
-Wave playback controls must appear centered in the panel header.
+Cycle의 끝점:
 
-### 16.2 Control set
+- `next_S1_start`
 
-Required controls:
+### 1.4 Validity 정책
 
-- back 5 seconds
-- play/pause
-- forward 5 seconds
-- reset to origin
-- playback-rate selector
+필수 boundary가 잘못되었거나 누락된 경우:
 
-### 16.3 Playhead interaction
+- 해당 parameter는 `NaN`으로 저장된다.
+- 강제로 `0`으로 바꾸지 않는다.
 
-The playhead must:
+### 1.5 Interval convention
 
-- track playback time
-- support drag-seek
-- behave as a unified line-plus-handle structure
+모든 segment 계산은 half-open interval을 사용한다.
 
-### 16.4 View synchronization
+- `x[start:end)`
 
-Wave navigation should coordinate with graph viewport state.
+## 2. UI Mapping
 
-## 17. Admin and Access Requirements
+### 2.1 `S1`
 
-The product must support:
+`S1` section은 S1 segment만으로 계산된 parameter를 보여준다.
 
-- viewing current access mode
-- changing access mode
-- generating one-time viewer access codes
+- `S1_Duration`
+- `S1_Peak`
+- `S1_Mean`
+- `S1_RMS`
+- `S1_Area`
+- `S1_Middle`
+- `S1_StartCentroid`
+- `S1_EndCentroid`
 
-Access mode choices:
+### 2.2 `S2`
 
-- `open`
-- `code`
+`S2` section은 S2 segment에 대해 S1과 동일한 metric family를 보여준다.
 
-## 18. Research Logging Requirements
+- `S2_Duration`
+- `S2_Peak`
+- `S2_Mean`
+- `S2_RMS`
+- `S2_Area`
+- `S2_Middle`
+- `S2_StartCentroid`
+- `S2_EndCentroid`
 
-Although not part of the main visual analysis runtime, the repository includes a research-log automation module.
+### 2.3 `S1-S2`
 
-The PRD records it as a secondary product capability.
+`S1-S2` section은 거리 및 관계 timing을 보여준다.
 
-Current subsystem goals:
+- `S1Start_to_S2Start`
+- `S1End_to_S2Start`
+- `S1Middle_to_S2Middle`
+- `S1End_to_S2End`
+- `S1Start_to_S2End`
+- `S1Peak_to_S2Peak`
 
-- generate daily markdown logs
-- generate structured daily JSON logs
-- infer meaningful work from commits, notes, and experiment files
-- avoid generating logs for meaningless days
+### 2.4 `RS Score`
 
-This subsystem should remain:
+`RS Score` section은 event 기반 3개 family를 묶어서 보여준다.
 
-- deterministic
-- local/repository-based
-- easy to inspect
-- not dependent on paid services
+- `RS Peak`
+- `RS Width`
+- `RS STD`
 
-## 19. Documentation Requirements
+대상 event는 다음 네 가지이다.
 
-The repository should maintain:
+- `S1 start`
+- `S1 end`
+- `S2 start`
+- `S2 end`
 
-- launcher documentation
-- usage documentation
-- implementation and process documents
-- product documentation under `process/`
+## 3. 공통 Landmark 정의
 
-The current docs folder contains mixed recency and some legacy references.
-This should be treated as a documentation hygiene opportunity rather than a functional blocker.
+선택된 각 cycle에 대해:
 
-## 20. Non-Functional Requirements
+- `s1s = S1_start`
+- `s1e = S1_end`
+- `s2s = S2_start`
+- `s2e = S2_end`
+- `s1n = next_S1_start`
 
-### 20.1 Local-first operation
+Segment 정의:
 
-The product should run fully on a local machine without cloud service dependency for core analysis.
+- `seg_S1 = x[s1s:s1e]`
+- `seg_S2 = x[s2s:s2e]`
 
-### 20.2 Maintainability
+Midpoint 정의:
 
-Key product behavior should remain understandable from:
+- `mid_S1 = (s1s + s1e) / 2`
+- `mid_S2 = (s2s + s2e) / 2`
 
-- frontend source
-- backend source
-- launcher scripts
-- repository documentation
+Absolute peak index 정의:
 
-### 20.3 Responsiveness
+- `peak_S1 = argmax(abs(seg_S1)) + s1s`
+- `peak_S2 = argmax(abs(seg_S2)) + s2s`
 
-The UI should remain usable when:
+Sample-to-time 변환:
 
-- chart ranges change frequently
-- playback is active
-- parameter and unsupervised overlays are linked to the current viewport
+- `samples_to_ms(n) = n * 0.25`
 
-### 20.4 Safety
+## 4. `S1` Parameter Formula
 
-The product should fail conservatively:
+### 4.1 `S1_Duration`
 
-- no speculative diagnosis
-- invalid parameter states become `NaN`
-- absent files do not crash the app
+의미:
 
-### 20.5 Portability
+- S1 segment의 duration
 
-The current launcher assumes a local development environment and includes macOS conveniences such as `pbcopy`.
-Cross-platform behavior is partially supported, but macOS remains a first-class path in the current implementation.
+Formula:
 
-## 21. Dependencies and Infrastructure
+- `(s1e - s1s) * 0.25`
 
-### 21.1 Frontend stack
+Unit:
 
-- React
-- TypeScript
-- Vite
-- ECharts
+- `ms`
 
-### 21.2 Backend stack
+### 4.2 `S1_Peak`
 
-- FastAPI
-- pandas
-- openpyxl
-- SQLite
+의미:
 
-### 21.3 Runtime helpers
+- S1 내부의 최대 absolute amplitude
 
-- local shell scripts
-- `cloudflared` for sharing
-- `pbcopy` for clipboard copy on macOS
+Formula:
 
-## 22. Current Risks and Limitations
+- `max(abs(seg_S1))`
 
-### 22.1 Documentation drift
+Unit:
 
-Some repository docs appear to include older naming or earlier project direction.
+- `mV`
 
-### 22.2 Full-resolution playback memory pressure
+### 4.3 `S1_Mean`
 
-The current playback strategy may keep full-resolution data available for smoother navigation, which can raise memory usage on large files.
+의미:
 
-### 22.3 HeartSound-first bias
+- S1 내부의 mean absolute amplitude
 
-The current product is significantly more developed in the HeartSound path than in the ECG path.
+Formula:
 
-### 22.4 Parameter breadth
+- `mean(abs(seg_S1))`
 
-The current derived HeartSound parameter set is practical but not exhaustive.
-Ideas in `ideas/Parameter.py` indicate a broader future roadmap not yet implemented.
+Unit:
 
-### 22.5 Legacy folder ambiguity
+- `mV`
 
-Some files in `docs/` and `ideas/` are informative rather than authoritative.
+### 4.4 `S1_RMS`
 
-## 23. Product Success Indicators
+의미:
 
-This repository does not currently define formal analytics, but practical success can be evaluated through:
+- S1 내부의 RMS amplitude
 
-- successful local startup without manual debugging
-- successful upload and linking of HeartSound records
-- accurate cycle-aware parameter display
-- usable synchronized wave playback
-- understandable graph annotations from parameter clicks
-- stable public sharing flow when needed
-- maintainable research logging output
+Formula:
 
-## 24. Roadmap Themes Implied by the Repository
+- `sqrt(mean(seg_S1^2))`
 
-The repository suggests several future product directions.
+Unit:
 
-### 24.1 Short-term likely directions
+- `mV`
 
-- richer HeartSound parameter extraction
-- improved parameter naming and explanation
-- further UI refinement for cycle and measurement review
-- documentation consolidation
+### 4.5 `S1_Area`
 
-### 24.2 Medium-term possible directions
+의미:
 
-- broader statistical and shape-based parameter families
-- more advanced S3/S4 candidate review workflows
-- stronger ECG integration parity
-- export/reporting improvements
+- 시간에 대해 적분된 S1의 absolute signal area
 
-### 24.3 Adjacent research-process directions
+Formula:
 
-- stronger daily research logging
-- reproducible experiment metadata patterns
-- tighter alignment between notes, commits, and generated summaries
+- `sum(abs(seg_S1)) * 0.25`
 
-## 25. Open Areas With Limited Confidence
+Unit:
 
-The following areas are not fully specified in the current repository and should be treated as lightly defined:
+- `mV*ms`
 
-- formal external user personas beyond research/operator use
-- long-term deployment model beyond local launcher plus ad hoc sharing
-- formal roadmap ordering across HeartSound, ECG, and automation subsystems
-- explicit business or regulatory objectives
-- exact intended lifecycle for legacy docs/spec files
+### 4.6 `S1_Middle`
 
-## 26. Recommended Next Documentation Outputs
+의미:
 
-To complement this PRD, the repository should ideally maintain:
+- S1 segment의 midpoint time
 
-- a concise user guide focused only on current behavior
-- a system architecture note
-- an API surface note for backend endpoints
-- a derived-parameter math appendix for HeartSound
-- a launcher operations note
+Formula:
 
-## 27. Source Basis for This PRD
+- `((s1s + s1e) / 2) * 0.25`
 
-This PRD was derived from:
+Unit:
 
-- top-level launcher scripts
-- `frontend/src/App.tsx`
-- `frontend/src/styles.css`
-- `backend/app/services/file_service.py`
-- `backend/app/services/plot_data_service.py`
-- `backend/app/services/auth_service.py`
-- `backend/app/db.py`
-- `README.md`
-- `docs/`
-- `Auto_Github/`
-- `ideas/`
+- `ms`
 
-## 28. Final Product Statement
+### 4.7 `S1_StartCentroid`
 
-The Tool repository currently represents a local biomedical signal review product centered on HeartSound analysis, with synchronized charting, derived cycle parameters, optional audio playback, selective sharing, and a strong emphasis on inspectable research workflows.
+의미:
 
-Its current strength is not generic platform breadth, but an unusually integrated local workflow for signal review, event reasoning, cycle-based metrics, and research process capture.
+- weighted energy center가 S1의 시작 절반 쪽으로 얼마나 치우쳐 있는지
 
+중간 정의:
+
+- `centroid_S1 = sum(n * abs(x[n])) / sum(abs(x[n]))` for `n in [s1s, s1e)`
+
+Formula:
+
+- `max(0, (mid_S1 - centroid_S1) / (mid_S1 - s1s)) * 100`
+
+Unit:
+
+- `%`
+
+### 4.8 `S1_EndCentroid`
+
+의미:
+
+- weighted energy center가 S1의 끝 절반 쪽으로 얼마나 치우쳐 있는지
+
+Formula:
+
+- `max(0, (centroid_S1 - mid_S1) / (s1e - mid_S1)) * 100`
+
+Unit:
+
+- `%`
+
+## 5. `S2` Parameter Formula
+
+`S2` formula는 `S1` formula와 동일한 구조를 가지며, S2 segment를 사용한다.
+
+### 5.1 `S2_Duration`
+
+Formula:
+
+- `(s2e - s2s) * 0.25`
+
+Unit:
+
+- `ms`
+
+### 5.2 `S2_Peak`
+
+Formula:
+
+- `max(abs(seg_S2))`
+
+Unit:
+
+- `mV`
+
+### 5.3 `S2_Mean`
+
+Formula:
+
+- `mean(abs(seg_S2))`
+
+Unit:
+
+- `mV`
+
+### 5.4 `S2_RMS`
+
+Formula:
+
+- `sqrt(mean(seg_S2^2))`
+
+Unit:
+
+- `mV`
+
+### 5.5 `S2_Area`
+
+Formula:
+
+- `sum(abs(seg_S2)) * 0.25`
+
+Unit:
+
+- `mV*ms`
+
+### 5.6 `S2_Middle`
+
+Formula:
+
+- `((s2s + s2e) / 2) * 0.25`
+
+Unit:
+
+- `ms`
+
+### 5.7 `S2_StartCentroid`
+
+Formula:
+
+- `max(0, (mid_S2 - centroid_S2) / (mid_S2 - s2s)) * 100`
+
+Unit:
+
+- `%`
+
+### 5.8 `S2_EndCentroid`
+
+Formula:
+
+- `max(0, (centroid_S2 - mid_S2) / (s2e - mid_S2)) * 100`
+
+Unit:
+
+- `%`
+
+## 6. `S1-S2` Relation Formula
+
+이 metric들은 S1과 S2 landmark 사이의 거리를 설명한다.
+
+### 6.1 `S1Start_to_S2Start`
+
+의미:
+
+- S1 start부터 S2 start까지의 거리
+
+Formula:
+
+- `(s2s - s1s) * 0.25`
+
+Unit:
+
+- `ms`
+
+### 6.2 `S1End_to_S2Start`
+
+의미:
+
+- S1 end부터 S2 start까지의 거리
+
+Formula:
+
+- `(s2s - s1e) * 0.25`
+
+Unit:
+
+- `ms`
+
+### 6.3 `S1Middle_to_S2Middle`
+
+의미:
+
+- S1 midpoint부터 S2 midpoint까지의 거리
+
+Formula:
+
+- `(mid_S2 - mid_S1) * 0.25`
+
+Unit:
+
+- `ms`
+
+### 6.4 `S1End_to_S2End`
+
+의미:
+
+- S1 end부터 S2 end까지의 거리
+
+Formula:
+
+- `(s2e - s1e) * 0.25`
+
+Unit:
+
+- `ms`
+
+### 6.5 `S1Start_to_S2End`
+
+의미:
+
+- S1 start부터 S2 end까지의 전체 거리
+
+Formula:
+
+- `(s2e - s1s) * 0.25`
+
+Unit:
+
+- `ms`
+
+### 6.6 `S1Peak_to_S2Peak`
+
+의미:
+
+- S1 내부의 가장 강한 absolute peak와 S2 내부의 가장 강한 absolute peak 사이의 거리
+
+Formula:
+
+- `(peak_S2 - peak_S1) * 0.25`
+
+Unit:
+
+- `ms`
+
+## 7. `HR` Formula
+
+### 7.1 `HeartRate_bpm`
+
+의미:
+
+- 현재 cycle 길이로부터 추정한 heart rate
+
+Formula:
+
+- `cycle_length_ms = (s1n - s1s) * 0.25`
+- `HR = 60000 / cycle_length_ms`
+
+Unit:
+
+- `bpm`
+
+Note:
+
+- `next_S1_start`가 없거나 invalid이면 `HR`은 `NaN`이 된다.
+
+## 8. `RS Score` Parameter Formula
+
+`RS Score` section은 S1/S2 boundary detection에 이미 사용되는 RS-score channel로부터 계산되는 event-based parameter를 포함한다.
+
+Source RS signal:
+
+- `rs_s1_start = S1-Start_RS_Score`
+- `rs_s1_end = S1-End_RS_Score`
+- `rs_s2_start = S2-Start_RS_Score`
+- `rs_s2_end = S2-End_RS_Score`
+
+Representative event index는 최종 선택된 area peak에서 가져온다.
+
+- `tau_s1s = selected S1 start peak index`
+- `tau_s1e = selected S1 end peak index`
+- `tau_s2s = selected S2 start peak index`
+- `tau_s2e = selected S2 end peak index`
+
+### 8.1 `RS Peak` family
+
+의미:
+
+- 선택된 event peak index에서의 raw RS-score value
+
+#### 8.1.1 `S1Start_RS_Peak`
+
+Formula:
+
+- `rs_s1_start[tau_s1s]`
+
+#### 8.1.2 `S1End_RS_Peak`
+
+Formula:
+
+- `rs_s1_end[tau_s1e]`
+
+#### 8.1.3 `S2Start_RS_Peak`
+
+Formula:
+
+- `rs_s2_start[tau_s2s]`
+
+#### 8.1.4 `S2End_RS_Peak`
+
+Formula:
+
+- `rs_s2_end[tau_s2e]`
+
+Unit:
+
+- raw RS-score scale
+
+### 8.2 `RS Width` family
+
+의미:
+
+- 선택된 event peak 주변에서 RS score가 peak value의 50% 이상으로 유지되는 contiguous region의 width
+
+일반 절차:
+
+1. `peak_val = RS(tau)`
+2. `threshold = 0.5 * peak_val`
+3. RS score가 `>= threshold`인 동안 왼쪽으로 이동
+4. RS score가 `>= threshold`인 동안 오른쪽으로 이동
+5. 두 경계 사이의 거리를 width로 계산
+
+일반 formula:
+
+- `width_ms = (right_index - left_index) * 0.25`
+
+해당 metric:
+
+- `S1Start_RS_Width`
+- `S1End_RS_Width`
+- `S2Start_RS_Width`
+- `S2End_RS_Width`
+
+Unit:
+
+- `ms`
+
+### 8.3 `RS STD` family
+
+의미:
+
+- 선택된 RS event peak 주변의 weighted temporal spread
+
+현재 local window:
+
+- `tau - 80`부터 `tau + 80`
+- 즉 `+-20 ms`
+
+일반 절차:
+
+1. event peak 주변의 local RS-score window 추출
+2. RS value를 weight로 사용
+3. weighted mean index 계산
+4. index 공간에서 weighted variance 계산
+5. standard deviation을 sample에서 ms로 변환
+
+Weighted mean:
+
+- `mu = sum(t * RS(t)) / sum(RS(t))`
+
+Weighted variance:
+
+- `var = sum((t - mu)^2 * RS(t)) / sum(RS(t))`
+
+최종 formula:
+
+- `std_ms = sqrt(var) * 0.25`
+
+해당 metric:
+
+- `S1Start_RS_STD`
+- `S1End_RS_STD`
+- `S2Start_RS_STD`
+- `S2End_RS_STD`
+
+Unit:
+
+- `ms`
+
+## 9. 각 Part가 사용자에게 의미하는 것
+
+### 9.1 `S1`
+
+이 part는 다음을 알려준다.
+
+- S1이 얼마나 긴지
+- S1이 얼마나 강한지
+- S1이 얼마나 많은 energy를 가지는지
+- S1 energy가 start-heavy인지 end-heavy인지
+
+### 9.2 `S2`
+
+이 part는 다음을 알려준다.
+
+- S2가 얼마나 긴지
+- S2가 얼마나 강한지
+- S2가 얼마나 많은 energy를 가지는지
+- S2 energy가 start-heavy인지 end-heavy인지
+
+### 9.3 `S1-S2`
+
+이 part는 다음을 알려준다.
+
+- S1과 S2 landmark가 얼마나 떨어져 있는지
+- systolic timing이 두 sound 사이에 어떻게 분포하는지
+- midpoint 기반 timing과 peak 기반 timing이 어떻게 다른지
+
+### 9.4 `RS Score`
+
+이 part는 다음을 알려준다.
+
+- 선택된 RS event peak가 얼마나 강한지
+- half-height 기준으로 RS event가 얼마나 넓은지
+- RS event가 시간적으로 얼마나 집중되어 있는지 혹은 퍼져 있는지
+
+### 9.5 `HR`
+
+이 part는 다음을 알려준다.
+
+- 현재 cycle이 한 S1 start에서 다음 S1 start까지 얼마나 긴지
+- 그로부터 계산된 beats-per-minute 값
+
+## 10. Graph Annotation Mapping
+
+UI에서 parameter를 클릭하면, graph에는 해당 parameter가 어디서 계산되었는지가 표시된다.
+
+현재 mapping:
+
+- `S1` metric -> S1 range
+- `S2` metric -> S2 range
+- `S1-S2` metric -> 해당 S1/S2 landmark 사이 interval
+- `HR` -> 현재 cycle부터 다음 cycle까지
+- `RS Peak` -> event point
+- `RS Width` -> half-height contiguous width region
+- `RS STD` -> local `+-20 ms` RS window
+
+## 11. Notes
+
+- 이 문서의 모든 formula는 `backend/app/services/plot_data_service.py`의 현재 구현을 반영한다.
+- UI grouping은 `frontend/src/App.tsx`의 현재 구현을 반영한다.
+- 이 문서는 현재 배포된 formula set만 설명한다.
+- `ideas/Parameter.py`에 있는 미래 parameter 아이디어는, 이미 구현된 것이 아니라면 여기 포함하지 않는다.
