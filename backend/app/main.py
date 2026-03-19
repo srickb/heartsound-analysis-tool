@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import UPLOAD_DIR, ensure_storage_directories
@@ -34,6 +34,7 @@ from app.services.file_service import (
 from app.services.plot_data_service import (
     PlotDataNotFoundError,
     PlotDataValidationError,
+    build_parameter_export_workbook,
     get_plot_data,
     get_parameter_summary,
     get_unsupervised_summary,
@@ -394,6 +395,28 @@ def get_file_parameter_summary(
     try:
         require_viewer_access(_session_token(request))
         return get_parameter_summary(file_id=file_id, start=start, end=end)
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    except PlotDataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PlotDataValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.get("/api/files/{file_id}/parameter-export")
+def download_file_parameter_export(
+    file_id: str,
+    request: Request,
+) -> StreamingResponse:
+    try:
+        require_viewer_access(_session_token(request))
+        workbook_stream, export_filename = build_parameter_export_workbook(file_id)
+        headers = {"Content-Disposition": f'attachment; filename="{export_filename}"'}
+        return StreamingResponse(
+            workbook_stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers,
+        )
     except AuthError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except PlotDataNotFoundError as error:

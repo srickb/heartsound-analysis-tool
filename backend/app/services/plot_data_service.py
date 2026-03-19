@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-from typing import Any
+from io import BytesIO
+from pathlib import Path
+from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
@@ -45,7 +47,6 @@ RAW_RANGE_LIMIT = 4000
 ECG_RAW_SCALE = 1 / 3
 HEARTSOUND_SAMPLE_RATE = 4000.0
 HEARTSOUND_SAMPLE_MS = 1000.0 / HEARTSOUND_SAMPLE_RATE
-HEARTSOUND_RS_STD_WINDOW_SAMPLES = 80
 HEARTSOUND_S1_PARAMETER_COLUMNS = [
     "S1_Duration_ms",
     "S1_Peak_mV",
@@ -67,12 +68,16 @@ HEARTSOUND_S2_PARAMETER_COLUMNS = [
     "S2_E_centroid_pct",
 ]
 HEARTSOUND_RELATION_PARAMETER_COLUMNS = [
-    "S1_S_to_S2_S_ms",
-    "S1_E_to_S2_S_ms",
-    "S1_mid_to_S2_mid_ms",
-    "S1_E_to_S2_E_ms",
-    "S1_S_to_S2_E_ms",
-    "S1_peak_to_S2_peak_ms",
+    "S1S2_Duration_ms",
+    "S1S2_Peak_mV",
+    "S1S2_mean_mV",
+    "S1S2_Energy_mV2ms",
+]
+HEARTSOUND_NEXT_RELATION_PARAMETER_COLUMNS = [
+    "S2S1_Duration_ms",
+    "S2S1_Peak_mV",
+    "S2S1_mean_mV",
+    "S2S1_Energy_mV2ms",
 ]
 HEARTSOUND_RS_PEAK_PARAMETER_COLUMNS = [
     "S1S_RS_Peak",
@@ -86,74 +91,66 @@ HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS = [
     "S2S_RS_Width_ms",
     "S2E_RS_Width_ms",
 ]
-HEARTSOUND_RS_STD_PARAMETER_COLUMNS = [
-    "S1S_RS_STD",
-    "S1E_RS_STD",
-    "S2S_RS_STD",
-    "S2E_RS_STD",
-]
 HEARTSOUND_HEART_RATE_COLUMNS = [
     "HeartRate_bpm",
 ]
 HEARTSOUND_DERIVED_GROUP_METADATA: dict[str, dict[str, str]] = {
     "s1_parameters": {
-        "label": "S1 Parameters",
+        "label": "S1",
     },
     "s2_parameters": {
-        "label": "S2 Parameters",
+        "label": "S2",
     },
     "s1_s2_relation": {
-        "label": "S1/S2 Relation Parameters",
+        "label": "S1-S2",
+    },
+    "s2_s1_relation": {
+        "label": "S2-S1",
     },
     "rs_peak": {
-        "label": "RS Peak Parameters",
+        "label": "RS Peak",
     },
     "rs_width": {
-        "label": "RS Width Parameters",
-    },
-    "rs_std": {
-        "label": "RS STD Parameters",
+        "label": "RS Width",
     },
     "heart_rate": {
-        "label": "Heart Rate",
+        "label": "HR",
     },
 }
 HEARTSOUND_DERIVED_METRIC_METADATA: dict[str, dict[str, str]] = {
-    "S1_Duration_ms": {"label": "S1_Duration", "unit": "ms"},
-    "S1_Peak_mV": {"label": "S1_Peak", "unit": "mV"},
-    "S1_mean_mV": {"label": "S1_Mean", "unit": "mV"},
-    "S1_RMS_mV": {"label": "S1_RMS", "unit": "mV"},
-    "S1_Area_mVms": {"label": "S1_Area", "unit": "mV·ms"},
-    "S1_Middle_ms": {"label": "S1_Middle", "unit": "ms"},
-    "S1_S_centroid_pct": {"label": "S1_StartCentroid", "unit": "%"},
-    "S1_E_centroid_pct": {"label": "S1_EndCentroid", "unit": "%"},
-    "S2_Duration_ms": {"label": "S2_Duration", "unit": "ms"},
-    "S2_Peak_mV": {"label": "S2_Peak", "unit": "mV"},
-    "S2_mean_mV": {"label": "S2_Mean", "unit": "mV"},
-    "S2_RMS_mV": {"label": "S2_RMS", "unit": "mV"},
-    "S2_Area_mVms": {"label": "S2_Area", "unit": "mV·ms"},
-    "S2_Middle_ms": {"label": "S2_Middle", "unit": "ms"},
-    "S2_S_centroid_pct": {"label": "S2_StartCentroid", "unit": "%"},
-    "S2_E_centroid_pct": {"label": "S2_EndCentroid", "unit": "%"},
-    "S1_S_to_S2_S_ms": {"label": "S1Start_to_S2Start", "unit": "ms"},
-    "S1_E_to_S2_S_ms": {"label": "S1End_to_S2Start", "unit": "ms"},
-    "S1_mid_to_S2_mid_ms": {"label": "S1Middle_to_S2Middle", "unit": "ms"},
-    "S1_E_to_S2_E_ms": {"label": "S1End_to_S2End", "unit": "ms"},
-    "S1_S_to_S2_E_ms": {"label": "S1Start_to_S2End", "unit": "ms"},
-    "S1_peak_to_S2_peak_ms": {"label": "S1Peak_to_S2Peak", "unit": "ms"},
-    "S1S_RS_Peak": {"label": "S1Start_RS_Peak", "unit": "RS score"},
-    "S1E_RS_Peak": {"label": "S1End_RS_Peak", "unit": "RS score"},
-    "S2S_RS_Peak": {"label": "S2Start_RS_Peak", "unit": "RS score"},
-    "S2E_RS_Peak": {"label": "S2End_RS_Peak", "unit": "RS score"},
-    "S1S_RS_Width_ms": {"label": "S1Start_RS_Width", "unit": "ms"},
-    "S1E_RS_Width_ms": {"label": "S1End_RS_Width", "unit": "ms"},
-    "S2S_RS_Width_ms": {"label": "S2Start_RS_Width", "unit": "ms"},
-    "S2E_RS_Width_ms": {"label": "S2End_RS_Width", "unit": "ms"},
-    "S1S_RS_STD": {"label": "S1Start_RS_STD", "unit": "ms"},
-    "S1E_RS_STD": {"label": "S1End_RS_STD", "unit": "ms"},
-    "S2S_RS_STD": {"label": "S2Start_RS_STD", "unit": "ms"},
-    "S2E_RS_STD": {"label": "S2End_RS_STD", "unit": "ms"},
-    "HeartRate_bpm": {"label": "HeartRate", "unit": "bpm"},
+    "S1_Duration_ms": {"label": "S1 Duration", "unit": "ms"},
+    "S1_Peak_mV": {"label": "S1 Peak", "unit": "mV"},
+    "S1_mean_mV": {"label": "S1 Mean", "unit": "mV"},
+    "S1_RMS_mV": {"label": "S1 RMS", "unit": "mV"},
+    "S1_Area_mVms": {"label": "S1 Area", "unit": "mV·ms"},
+    "S1_Middle_ms": {"label": "S1 Middle", "unit": "ms"},
+    "S1_S_centroid_pct": {"label": "S1_s Centroid", "unit": "%"},
+    "S1_E_centroid_pct": {"label": "S1_e Centroid", "unit": "%"},
+    "S2_Duration_ms": {"label": "S2 Duration", "unit": "ms"},
+    "S2_Peak_mV": {"label": "S2 Peak", "unit": "mV"},
+    "S2_mean_mV": {"label": "S2 Mean", "unit": "mV"},
+    "S2_RMS_mV": {"label": "S2 RMS", "unit": "mV"},
+    "S2_Area_mVms": {"label": "S2 Area", "unit": "mV·ms"},
+    "S2_Middle_ms": {"label": "S2 Middle", "unit": "ms"},
+    "S2_S_centroid_pct": {"label": "S2_s Centroid", "unit": "%"},
+    "S2_E_centroid_pct": {"label": "S2_e Centroid", "unit": "%"},
+    "S1S2_Duration_ms": {"label": "S1-S2 Duration", "unit": "ms"},
+    "S1S2_Peak_mV": {"label": "S1-S2 Peak", "unit": "mV"},
+    "S1S2_mean_mV": {"label": "S1-S2 Mean", "unit": "mV"},
+    "S1S2_Energy_mV2ms": {"label": "S1-S2 Energy", "unit": "mV²·ms"},
+    "S2S1_Duration_ms": {"label": "S2-S1 Duration", "unit": "ms"},
+    "S2S1_Peak_mV": {"label": "S2-S1 Peak", "unit": "mV"},
+    "S2S1_mean_mV": {"label": "S2-S1 Mean", "unit": "mV"},
+    "S2S1_Energy_mV2ms": {"label": "S2-S1 Energy", "unit": "mV²·ms"},
+    "S1S_RS_Peak": {"label": "S1_s RS Peak", "unit": "RS score"},
+    "S1E_RS_Peak": {"label": "S1_e RS Peak", "unit": "RS score"},
+    "S2S_RS_Peak": {"label": "S2_s RS Peak", "unit": "RS score"},
+    "S2E_RS_Peak": {"label": "S2_e RS Peak", "unit": "RS score"},
+    "S1S_RS_Width_ms": {"label": "S1_s RS Width", "unit": "ms"},
+    "S1E_RS_Width_ms": {"label": "S1_e RS Width", "unit": "ms"},
+    "S2S_RS_Width_ms": {"label": "S2_s RS Width", "unit": "ms"},
+    "S2E_RS_Width_ms": {"label": "S2_e RS Width", "unit": "ms"},
+    "HeartRate_bpm": {"label": "HR", "unit": "bpm"},
 }
 PARAMETER_SUMMARY_GROUPS: list[tuple[str, str, list[str]]] = [
     ("timing", "p_rs / qrs_rs / t_rs", ["p_rs", "qrs_rs", "t_rs"]),
@@ -223,13 +220,13 @@ HEARTSOUND_PARAMETER_SUMMARY_GROUPS: list[tuple[str, str, list[str]]] = [
     ),
 ]
 HEARTSOUND_DERIVED_PARAMETER_SUMMARY_GROUPS: list[tuple[str, str, list[str]]] = [
-    ("s1_parameters", "S1 Parameters", HEARTSOUND_S1_PARAMETER_COLUMNS),
-    ("s2_parameters", "S2 Parameters", HEARTSOUND_S2_PARAMETER_COLUMNS),
-    ("s1_s2_relation", "S1/S2 Relation Parameters", HEARTSOUND_RELATION_PARAMETER_COLUMNS),
-    ("rs_peak", "RS Peak Parameters", HEARTSOUND_RS_PEAK_PARAMETER_COLUMNS),
-    ("rs_width", "RS Width Parameters", HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS),
-    ("rs_std", "RS STD Parameters", HEARTSOUND_RS_STD_PARAMETER_COLUMNS),
-    ("heart_rate", "Heart Rate", HEARTSOUND_HEART_RATE_COLUMNS),
+    ("s1_parameters", "S1", HEARTSOUND_S1_PARAMETER_COLUMNS),
+    ("s2_parameters", "S2", HEARTSOUND_S2_PARAMETER_COLUMNS),
+    ("s1_s2_relation", "S1-S2", HEARTSOUND_RELATION_PARAMETER_COLUMNS),
+    ("s2_s1_relation", "S2-S1", HEARTSOUND_NEXT_RELATION_PARAMETER_COLUMNS),
+    ("rs_peak", "RS Peak", HEARTSOUND_RS_PEAK_PARAMETER_COLUMNS),
+    ("rs_width", "RS Width", HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS),
+    ("heart_rate", "HR", HEARTSOUND_HEART_RATE_COLUMNS),
 ]
 HEARTSOUND_REGION_THRESHOLD = 15.0
 HEARTSOUND_DEFAULT_CYCLE_SPACING = 4000
@@ -266,6 +263,7 @@ class LRUCache:
 _dataframe_cache = LRUCache(max_size=16)
 _plot_cache = LRUCache(max_size=256)
 _derived_parameter_cache = LRUCache(max_size=16)
+_parameter_cycle_summary_cache = LRUCache(max_size=16)
 
 
 def _parse_cycle_number(value: Any, fallback: int) -> int:
@@ -518,16 +516,16 @@ def _nan_relation_parameter_row() -> dict[str, float]:
     return {column: np.nan for column in HEARTSOUND_RELATION_PARAMETER_COLUMNS}
 
 
+def _nan_next_relation_parameter_row() -> dict[str, float]:
+    return {column: np.nan for column in HEARTSOUND_NEXT_RELATION_PARAMETER_COLUMNS}
+
+
 def _nan_rs_peak_parameter_row() -> dict[str, float]:
     return {column: np.nan for column in HEARTSOUND_RS_PEAK_PARAMETER_COLUMNS}
 
 
 def _nan_rs_width_parameter_row() -> dict[str, float]:
     return {column: np.nan for column in HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS}
-
-
-def _nan_rs_std_parameter_row() -> dict[str, float]:
-    return {column: np.nan for column in HEARTSOUND_RS_STD_PARAMETER_COLUMNS}
 
 
 def _nan_heart_rate_row() -> dict[str, float]:
@@ -557,18 +555,50 @@ def _is_valid_heartsound_cycle_order(
 
 
 def _compute_s1_parameter_row(amplitude: np.ndarray, start_index: int, end_index: int) -> dict[str, float]:
+    return _compute_sound_parameter_row(
+        amplitude,
+        start_index,
+        end_index,
+        duration_key="S1_Duration_ms",
+        peak_key="S1_Peak_mV",
+        mean_key="S1_mean_mV",
+        rms_key="S1_RMS_mV",
+        area_key="S1_Area_mVms",
+        middle_key="S1_Middle_ms",
+        start_centroid_key="S1_S_centroid_pct",
+        end_centroid_key="S1_E_centroid_pct",
+        nan_factory=_nan_s1_parameter_row,
+    )
+
+
+def _compute_sound_parameter_row(
+    amplitude: np.ndarray,
+    start_index: int,
+    end_index: int,
+    *,
+    duration_key: str,
+    peak_key: str,
+    mean_key: str,
+    rms_key: str,
+    area_key: str,
+    middle_key: str,
+    start_centroid_key: str,
+    end_centroid_key: str,
+    nan_factory: Callable[[], dict[str, float]],
+) -> dict[str, float]:
     safe_start = max(0, int(start_index))
     safe_end = min(len(amplitude), int(end_index))
     if safe_start >= safe_end or amplitude.size == 0:
-        return _nan_s1_parameter_row()
+        return nan_factory()
 
     segment = amplitude[safe_start:safe_end].astype(float, copy=False)
     if segment.size == 0:
-        return _nan_s1_parameter_row()
+        return nan_factory()
 
     absolute_segment = np.abs(segment)
     total_absolute = float(np.sum(absolute_segment))
     middle_index = (safe_start + safe_end) / 2.0
+    segment_last_index = float(safe_end - 1)
 
     centroid_sample = np.nan
     if total_absolute > 0.0:
@@ -577,71 +607,41 @@ def _compute_s1_parameter_row(amplitude: np.ndarray, start_index: int, end_index
         if centroid_denominator > 0.0:
             centroid_sample = float(np.sum(sample_indices * absolute_segment) / centroid_denominator)
 
-    start_denominator = middle_index - safe_start
-    end_denominator = safe_end - middle_index
-
     start_centroid_pct = np.nan
-    if np.isfinite(centroid_sample) and start_denominator > 0.0:
-        start_centroid_pct = float(max(0.0, (middle_index - centroid_sample) / start_denominator) * 100.0)
-
     end_centroid_pct = np.nan
-    if np.isfinite(centroid_sample) and end_denominator > 0.0:
-        end_centroid_pct = float(max(0.0, (centroid_sample - middle_index) / end_denominator) * 100.0)
+    total_span = segment_last_index - safe_start
+    if np.isfinite(centroid_sample) and total_span > 0.0:
+        normalized_end_pct = ((centroid_sample - safe_start) / total_span) * 100.0
+        end_centroid_pct = float(min(100.0, max(0.0, normalized_end_pct)))
+        start_centroid_pct = float(100.0 - end_centroid_pct)
 
     return {
-        "S1_Duration_ms": float((safe_end - safe_start) * HEARTSOUND_SAMPLE_MS),
-        "S1_Peak_mV": float(np.max(absolute_segment)),
-        "S1_mean_mV": float(np.mean(absolute_segment)),
-        "S1_RMS_mV": float(np.sqrt(np.mean(segment ** 2))),
-        "S1_Area_mVms": float(np.sum(absolute_segment) * HEARTSOUND_SAMPLE_MS),
-        "S1_Middle_ms": float(middle_index * HEARTSOUND_SAMPLE_MS),
-        "S1_S_centroid_pct": start_centroid_pct,
-        "S1_E_centroid_pct": end_centroid_pct,
+        duration_key: float((safe_end - safe_start) * HEARTSOUND_SAMPLE_MS),
+        peak_key: float(np.max(absolute_segment)),
+        mean_key: float(np.mean(absolute_segment)),
+        rms_key: float(np.sqrt(np.mean(segment ** 2))),
+        area_key: float(np.sum(absolute_segment) * HEARTSOUND_SAMPLE_MS),
+        middle_key: float(middle_index * HEARTSOUND_SAMPLE_MS),
+        start_centroid_key: start_centroid_pct,
+        end_centroid_key: end_centroid_pct,
     }
 
 
 def _compute_s2_parameter_row(amplitude: np.ndarray, start_index: int, end_index: int) -> dict[str, float]:
-    safe_start = max(0, int(start_index))
-    safe_end = min(len(amplitude), int(end_index))
-    if safe_start >= safe_end or amplitude.size == 0:
-        return _nan_s2_parameter_row()
-
-    segment = amplitude[safe_start:safe_end].astype(float, copy=False)
-    if segment.size == 0:
-        return _nan_s2_parameter_row()
-
-    absolute_segment = np.abs(segment)
-    total_absolute = float(np.sum(absolute_segment))
-    middle_index = (safe_start + safe_end) / 2.0
-
-    centroid_sample = np.nan
-    if total_absolute > 0.0:
-        sample_indices = np.arange(safe_start, safe_end, dtype=float)
-        centroid_denominator = float(np.sum(absolute_segment))
-        if centroid_denominator > 0.0:
-            centroid_sample = float(np.sum(sample_indices * absolute_segment) / centroid_denominator)
-
-    start_denominator = middle_index - safe_start
-    end_denominator = safe_end - middle_index
-
-    start_centroid_pct = np.nan
-    if np.isfinite(centroid_sample) and start_denominator > 0.0:
-        start_centroid_pct = float(max(0.0, (middle_index - centroid_sample) / start_denominator) * 100.0)
-
-    end_centroid_pct = np.nan
-    if np.isfinite(centroid_sample) and end_denominator > 0.0:
-        end_centroid_pct = float(max(0.0, (centroid_sample - middle_index) / end_denominator) * 100.0)
-
-    return {
-        "S2_Duration_ms": float((safe_end - safe_start) * HEARTSOUND_SAMPLE_MS),
-        "S2_Peak_mV": float(np.max(absolute_segment)),
-        "S2_mean_mV": float(np.mean(absolute_segment)),
-        "S2_RMS_mV": float(np.sqrt(np.mean(segment ** 2))),
-        "S2_Area_mVms": float(np.sum(absolute_segment) * HEARTSOUND_SAMPLE_MS),
-        "S2_Middle_ms": float(middle_index * HEARTSOUND_SAMPLE_MS),
-        "S2_S_centroid_pct": start_centroid_pct,
-        "S2_E_centroid_pct": end_centroid_pct,
-    }
+    return _compute_sound_parameter_row(
+        amplitude,
+        start_index,
+        end_index,
+        duration_key="S2_Duration_ms",
+        peak_key="S2_Peak_mV",
+        mean_key="S2_mean_mV",
+        rms_key="S2_RMS_mV",
+        area_key="S2_Area_mVms",
+        middle_key="S2_Middle_ms",
+        start_centroid_key="S2_S_centroid_pct",
+        end_centroid_key="S2_E_centroid_pct",
+        nan_factory=_nan_s2_parameter_row,
+    )
 
 
 def _compute_relation_parameter_row(
@@ -651,35 +651,65 @@ def _compute_relation_parameter_row(
     s2_start_index: int,
     s2_end_index: int,
 ) -> dict[str, float]:
-    safe_s1_start = max(0, int(s1_start_index))
-    safe_s1_end = min(len(amplitude), int(s1_end_index))
-    safe_s2_start = max(0, int(s2_start_index))
-    safe_s2_end = min(len(amplitude), int(s2_end_index))
+    return _compute_gap_parameter_row(
+        amplitude,
+        start_index=s1_end_index,
+        end_index=s2_start_index,
+        duration_key="S1S2_Duration_ms",
+        peak_key="S1S2_Peak_mV",
+        mean_key="S1S2_mean_mV",
+        energy_key="S1S2_Energy_mV2ms",
+        nan_factory=_nan_relation_parameter_row,
+    )
 
-    if amplitude.size == 0 or safe_s1_start >= safe_s1_end or safe_s2_start >= safe_s2_end:
-        return _nan_relation_parameter_row()
 
-    s1_segment = amplitude[safe_s1_start:safe_s1_end].astype(float, copy=False)
-    s2_segment = amplitude[safe_s2_start:safe_s2_end].astype(float, copy=False)
-    if s1_segment.size == 0 or s2_segment.size == 0:
-        return _nan_relation_parameter_row()
+def _compute_next_relation_parameter_row(
+    amplitude: np.ndarray,
+    s2_start_index: int,
+    s2_end_index: int,
+    next_s1_start_index: int,
+    next_s1_end_index: int,
+) -> dict[str, float]:
+    return _compute_gap_parameter_row(
+        amplitude,
+        start_index=s2_end_index,
+        end_index=next_s1_start_index,
+        duration_key="S2S1_Duration_ms",
+        peak_key="S2S1_Peak_mV",
+        mean_key="S2S1_mean_mV",
+        energy_key="S2S1_Energy_mV2ms",
+        nan_factory=_nan_next_relation_parameter_row,
+    )
 
-    try:
-        s1_peak_index = int(np.argmax(np.abs(s1_segment))) + safe_s1_start
-        s2_peak_index = int(np.argmax(np.abs(s2_segment))) + safe_s2_start
-    except Exception:
-        return _nan_relation_parameter_row()
 
-    s1_middle_index = (safe_s1_start + safe_s1_end) / 2.0
-    s2_middle_index = (safe_s2_start + safe_s2_end) / 2.0
+def _compute_gap_parameter_row(
+    amplitude: np.ndarray,
+    *,
+    start_index: int,
+    end_index: int,
+    duration_key: str,
+    peak_key: str,
+    mean_key: str,
+    energy_key: str,
+    nan_factory: Callable[[], dict[str, float]],
+) -> dict[str, float]:
+    safe_start = min(len(amplitude), int(start_index))
+    safe_end = max(0, int(end_index))
+    if amplitude.size == 0 or safe_start >= safe_end:
+        return nan_factory()
+
+    interval_segment = amplitude[safe_start:safe_end].astype(float, copy=False)
+    if interval_segment.size == 0:
+        return nan_factory()
+
+    absolute_segment = np.abs(interval_segment)
+    energy_value = float(np.sum(interval_segment ** 2) * HEARTSOUND_SAMPLE_MS)
 
     return {
-        "S1_S_to_S2_S_ms": float((safe_s2_start - safe_s1_start) * HEARTSOUND_SAMPLE_MS),
-        "S1_E_to_S2_S_ms": float((safe_s2_start - safe_s1_end) * HEARTSOUND_SAMPLE_MS),
-        "S1_mid_to_S2_mid_ms": float((s2_middle_index - s1_middle_index) * HEARTSOUND_SAMPLE_MS),
-        "S1_E_to_S2_E_ms": float((safe_s2_end - safe_s1_end) * HEARTSOUND_SAMPLE_MS),
-        "S1_S_to_S2_E_ms": float((safe_s2_end - safe_s1_start) * HEARTSOUND_SAMPLE_MS),
-        "S1_peak_to_S2_peak_ms": float((s2_peak_index - s1_peak_index) * HEARTSOUND_SAMPLE_MS),
+        duration_key: float((safe_end - safe_start) * HEARTSOUND_SAMPLE_MS),
+        peak_key: float(np.max(absolute_segment)),
+        mean_key: float(np.mean(absolute_segment)),
+        energy_key: energy_value,
     }
 
 
@@ -710,7 +740,9 @@ def _get_rs_peak_value(signal: np.ndarray, event_index: int | None) -> float:
         return float(np.nan)
 
     value = float(signal[safe_index])
-    return value if np.isfinite(value) else float(np.nan)
+    if not np.isfinite(value):
+        return float(np.nan)
+    return float(int(round(value)))
 
 
 def _get_rs_width_value(signal: np.ndarray, event_index: int | None) -> float:
@@ -744,36 +776,6 @@ def _get_rs_width_value(signal: np.ndarray, event_index: int | None) -> float:
         return float(np.nan)
 
     return float((right_index - left_index) * HEARTSOUND_SAMPLE_MS)
-
-
-def _get_rs_std_value(signal: np.ndarray, event_index: int | None) -> float:
-    if event_index is None:
-        return float(np.nan)
-
-    safe_index = int(event_index)
-    if safe_index < 0 or safe_index >= len(signal):
-        return float(np.nan)
-
-    left_index = max(0, safe_index - HEARTSOUND_RS_STD_WINDOW_SAMPLES)
-    right_index = min(len(signal) - 1, safe_index + HEARTSOUND_RS_STD_WINDOW_SAMPLES)
-    if left_index > right_index:
-        return float(np.nan)
-
-    local_indices = np.arange(left_index, right_index + 1, dtype=float)
-    local_values = signal[left_index : right_index + 1].astype(float, copy=False)
-    if local_values.size == 0:
-        return float(np.nan)
-
-    weight_sum = float(np.sum(local_values))
-    if not np.isfinite(weight_sum) or weight_sum <= 0.0:
-        return float(np.nan)
-
-    weighted_mean = float(np.sum(local_indices * local_values) / weight_sum)
-    variance = float(np.sum(((local_indices - weighted_mean) ** 2) * local_values) / weight_sum)
-    if not np.isfinite(variance) or variance < 0.0:
-        return float(np.nan)
-
-    return float(np.sqrt(variance) * HEARTSOUND_SAMPLE_MS)
 
 
 def _compute_rs_peak_parameter_row(
@@ -824,30 +826,6 @@ def _compute_rs_width_parameter_row(
     }
 
 
-def _compute_rs_std_parameter_row(
-    s1_start_signal: np.ndarray,
-    s1_end_signal: np.ndarray,
-    s2_start_signal: np.ndarray,
-    s2_end_signal: np.ndarray,
-    s1_overlay: dict[str, Any],
-    s2_overlay: dict[str, Any] | None,
-) -> dict[str, float]:
-    if s2_overlay is None:
-        return _nan_rs_std_parameter_row()
-
-    s1_start_peak = s1_overlay.get("startPeak")
-    s1_end_peak = s1_overlay.get("endPeak")
-    s2_start_peak = s2_overlay.get("startPeak")
-    s2_end_peak = s2_overlay.get("endPeak")
-
-    return {
-        "S1S_RS_STD": _get_rs_std_value(s1_start_signal, s1_start_peak[0] if s1_start_peak else None),
-        "S1E_RS_STD": _get_rs_std_value(s1_end_signal, s1_end_peak[0] if s1_end_peak else None),
-        "S2S_RS_STD": _get_rs_std_value(s2_start_signal, s2_start_peak[0] if s2_start_peak else None),
-        "S2E_RS_STD": _get_rs_std_value(s2_end_signal, s2_end_peak[0] if s2_end_peak else None),
-    }
-
-
 def _empty_heartsound_parameter_frame() -> pd.DataFrame:
     columns = [
         "Filename",
@@ -857,15 +835,33 @@ def _empty_heartsound_parameter_frame() -> pd.DataFrame:
         "S2_start",
         "S2_end",
         "next_S1_start",
+        "next_S1_end",
         *HEARTSOUND_S1_PARAMETER_COLUMNS,
         *HEARTSOUND_S2_PARAMETER_COLUMNS,
         *HEARTSOUND_RELATION_PARAMETER_COLUMNS,
+        *HEARTSOUND_NEXT_RELATION_PARAMETER_COLUMNS,
         *HEARTSOUND_RS_PEAK_PARAMETER_COLUMNS,
         *HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS,
-        *HEARTSOUND_RS_STD_PARAMETER_COLUMNS,
         *HEARTSOUND_HEART_RATE_COLUMNS,
     ]
     return pd.DataFrame(columns=columns)
+
+
+def _filter_valid_heartsound_cycles(dataframe: pd.DataFrame) -> pd.DataFrame:
+    if dataframe.empty:
+        return dataframe.copy()
+
+    validity_mask = dataframe.apply(
+        lambda row: _is_valid_heartsound_cycle_order(
+            row.get("S1_start"),
+            row.get("S1_end"),
+            row.get("S2_start"),
+            row.get("S2_end"),
+            row.get("next_S1_start"),
+        ),
+        axis=1,
+    )
+    return dataframe.loc[validity_mask].reset_index(drop=True)
 
 
 def _build_heartsound_derived_parameter_frame(file_id: str, dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -900,7 +896,9 @@ def _build_heartsound_derived_parameter_frame(file_id: str, dataframe: pd.DataFr
     for cycle_index, s1_overlay in enumerate(sorted_s1, start=1):
         s1_start = int(s1_overlay["areaStart"])
         s1_end = int(s1_overlay["areaEnd"])
-        next_s1_start = int(sorted_s1[cycle_index]["areaStart"]) if cycle_index < len(sorted_s1) else None
+        next_s1_overlay = sorted_s1[cycle_index] if cycle_index < len(sorted_s1) else None
+        next_s1_start = int(next_s1_overlay["areaStart"]) if next_s1_overlay is not None else None
+        next_s1_end = int(next_s1_overlay["areaEnd"]) if next_s1_overlay is not None else None
 
         while s2_index < len(sorted_s2) and int(sorted_s2[s2_index]["areaEnd"]) <= s1_start:
             s2_index += 1
@@ -936,11 +934,24 @@ def _build_heartsound_derived_parameter_frame(file_id: str, dataframe: pd.DataFr
             "S2_start": s2_start,
             "S2_end": s2_end,
             "next_S1_start": next_s1_start if next_s1_start is not None else np.nan,
+            "next_S1_end": next_s1_end if next_s1_end is not None else np.nan,
         }
         row.update(_compute_s1_parameter_row(amplitude, s1_start, s1_end))
         if matched_s2 is not None:
             row.update(_compute_s2_parameter_row(amplitude, int(s2_start), int(s2_end)))
             row.update(_compute_relation_parameter_row(amplitude, s1_start, s1_end, int(s2_start), int(s2_end)))
+            if next_s1_start is not None and next_s1_end is not None:
+                row.update(
+                    _compute_next_relation_parameter_row(
+                        amplitude,
+                        int(s2_start),
+                        int(s2_end),
+                        next_s1_start,
+                        next_s1_end,
+                    )
+                )
+            else:
+                row.update(_nan_next_relation_parameter_row())
             row.update(
                 _compute_rs_peak_parameter_row(
                     s1_start_values,
@@ -961,28 +972,59 @@ def _build_heartsound_derived_parameter_frame(file_id: str, dataframe: pd.DataFr
                     matched_s2,
                 )
             )
-            row.update(
-                _compute_rs_std_parameter_row(
-                    s1_start_values,
-                    s1_end_values,
-                    s2_start_values,
-                    s2_end_values,
-                    s1_overlay,
-                    matched_s2,
-                )
-            )
         else:
             row.update(_nan_s2_parameter_row())
             row.update(_nan_relation_parameter_row())
+            row.update(_nan_next_relation_parameter_row())
             row.update(_nan_rs_peak_parameter_row())
             row.update(_nan_rs_width_parameter_row())
-            row.update(_nan_rs_std_parameter_row())
         row.update(_compute_heart_rate_row(s1_start, next_s1_start))
         rows.append(row)
 
     derived = pd.DataFrame(rows) if rows else _empty_heartsound_parameter_frame()
     _derived_parameter_cache.set(file_id, derived)
     return derived
+
+
+def build_parameter_export_workbook(file_id: str) -> tuple[BytesIO, str]:
+    metadata = get_file_metadata(file_id)
+    if metadata is None:
+        raise PlotDataNotFoundError("file metadata not found")
+
+    workspace_kind = str(metadata.get("workspaceKind") or "heartsound")
+    file_role = str(metadata.get("fileRole") or "data")
+    if file_role != "parameter" and not (workspace_kind == "heartsound" and file_role == "data"):
+        raise PlotDataValidationError("parameter export is only available for parameter files or heartsound data files")
+
+    stored_name = str(metadata["storedName"])
+    extension = str(metadata["extension"]).lower()
+    dataframe = _load_dataframe(file_id, stored_name, extension, workspace_kind, file_role)
+
+    if workspace_kind == "heartsound" and file_role == "data":
+        export_frame = _filter_valid_heartsound_cycles(_build_heartsound_derived_parameter_frame(file_id, dataframe))
+    else:
+        export_frame = dataframe.copy()
+
+    workbook_stream = BytesIO()
+    with pd.ExcelWriter(workbook_stream, engine="openpyxl") as writer:
+        export_frame.to_excel(writer, index=False, sheet_name="Parameters")
+        metadata_frame = pd.DataFrame(
+            [
+                {"Field": "file_id", "Value": file_id},
+                {"Field": "original_name", "Value": str(metadata.get("originalName") or file_id)},
+                {"Field": "workspace_kind", "Value": workspace_kind},
+                {"Field": "file_role", "Value": file_role},
+                {"Field": "exported_row_count", "Value": int(len(export_frame))},
+            ]
+        )
+        metadata_frame.to_excel(writer, index=False, sheet_name="Metadata")
+
+    workbook_stream.seek(0)
+
+    original_name = str(metadata.get("originalName") or file_id)
+    export_stem = Path(original_name).stem or file_id
+    export_filename = f"{export_stem}_parameters.xlsx"
+    return workbook_stream, export_filename
 
 
 def _downsample_generic_series(
@@ -1257,6 +1299,52 @@ def _build_summary_groups(
     ]
 
 
+def _build_cycle_summary_payloads(
+    frame: pd.DataFrame,
+    group_spec: list[tuple[str, str, list[str]]],
+    *,
+    requested_start: int,
+    requested_end: int,
+    group_metadata: dict[str, dict[str, str]] | None = None,
+    metric_metadata: dict[str, dict[str, str]] | None = None,
+    validate_cycle_order: bool = False,
+) -> list[dict[str, Any]]:
+    cycles: list[dict[str, Any]] = []
+    for row_index, (_, row) in enumerate(frame.iterrows()):
+        if validate_cycle_order and not _is_valid_heartsound_cycle_order(
+            row.get("S1_start"),
+            row.get("S1_end"),
+            row.get("S2_start"),
+            row.get("S2_end"),
+            row.get("next_S1_start"),
+        ):
+            continue
+
+        row_frame = pd.DataFrame([row])
+        cycle_index_raw = row.get("Cycle_Index", row_index + 1)
+        cycle_index = int(cycle_index_raw) if pd.notna(cycle_index_raw) else row_index + 1
+        cycle_start_value = row.get("S1_start", requested_start)
+        cycle_end_value = row.get("next_S1_start", row.get("S2_end", requested_end))
+        try:
+            cycle_start_int = int(float(cycle_start_value))
+        except Exception:
+            cycle_start_int = requested_start
+        try:
+            cycle_end_int = int(float(cycle_end_value))
+        except Exception:
+            cycle_end_int = requested_end
+
+        cycles.append(
+            {
+                "cycleIndex": cycle_index,
+                "startIndex": cycle_start_int,
+                "endIndex": max(cycle_start_int, cycle_end_int),
+                "groups": _build_summary_groups(row_frame, group_spec, group_metadata, metric_metadata),
+            }
+        )
+    return cycles
+
+
 def get_parameter_summary(
     file_id: str,
     start: int | None,
@@ -1294,29 +1382,12 @@ def get_parameter_summary(
         resolved_cycle_end = cycle_end.where(np.isfinite(cycle_end), fallback_end)
         segment = dataframe.loc[(cycle_start <= requested_end) & (resolved_cycle_end >= requested_start)]
         group_spec = HEARTSOUND_PARAMETER_SUMMARY_GROUPS
-        cycles = []
-        for row_index, (_, row) in enumerate(segment.iterrows()):
-            row_frame = pd.DataFrame([row])
-            cycle_index_raw = row.get("Cycle_Index", row_index + 1)
-            cycle_index = int(cycle_index_raw) if pd.notna(cycle_index_raw) else row_index + 1
-            cycle_start_value = row.get("S1_start", requested_start)
-            cycle_end_value = row.get("next_S1_start", row.get("S2_end", requested_end))
-            try:
-                cycle_start_int = int(float(cycle_start_value))
-            except Exception:
-                cycle_start_int = requested_start
-            try:
-                cycle_end_int = int(float(cycle_end_value))
-            except Exception:
-                cycle_end_int = requested_end
-            cycles.append(
-                {
-                    "cycleIndex": cycle_index,
-                    "startIndex": cycle_start_int,
-                    "endIndex": max(cycle_start_int, cycle_end_int),
-                    "groups": _build_summary_groups(row_frame, HEARTSOUND_PARAMETER_SUMMARY_GROUPS),
-                }
-            )
+        cycles = _build_cycle_summary_payloads(
+            segment,
+            HEARTSOUND_PARAMETER_SUMMARY_GROUPS,
+            requested_start=requested_start,
+            requested_end=requested_end,
+        )
     elif workspace_kind == "heartsound" and file_role == "data":
         derived_frame = _build_heartsound_derived_parameter_frame(file_id, dataframe)
         cycle_start = pd.to_numeric(derived_frame["S1_start"], errors="coerce")
@@ -1325,42 +1396,20 @@ def get_parameter_summary(
         resolved_cycle_end = cycle_end.where(np.isfinite(cycle_end), fallback_end)
         segment = derived_frame.loc[(cycle_start <= requested_end) & (resolved_cycle_end >= requested_start)]
         group_spec = HEARTSOUND_DERIVED_PARAMETER_SUMMARY_GROUPS
-        cycles = []
-        for row_index, (_, row) in enumerate(derived_frame.iterrows()):
-            row_frame = pd.DataFrame([row])
-            cycle_index_raw = row.get("Cycle_Index", row_index + 1)
-            cycle_index = int(cycle_index_raw) if pd.notna(cycle_index_raw) else row_index + 1
-            cycle_start_value = row.get("S1_start", requested_start)
-            cycle_end_value = row.get("next_S1_start", row.get("S2_end", requested_end))
-            try:
-                cycle_start_int = int(float(cycle_start_value))
-            except Exception:
-                cycle_start_int = requested_start
-            try:
-                cycle_end_int = int(float(cycle_end_value))
-            except Exception:
-                cycle_end_int = requested_end
-            if not _is_valid_heartsound_cycle_order(
-                row.get("S1_start"),
-                row.get("S1_end"),
-                row.get("S2_start"),
-                row.get("S2_end"),
-                row.get("next_S1_start"),
-            ):
-                continue
-            cycles.append(
-                {
-                    "cycleIndex": cycle_index,
-                    "startIndex": cycle_start_int,
-                    "endIndex": max(cycle_start_int, cycle_end_int),
-                    "groups": _build_summary_groups(
-                        row_frame,
-                        HEARTSOUND_DERIVED_PARAMETER_SUMMARY_GROUPS,
-                        HEARTSOUND_DERIVED_GROUP_METADATA,
-                        HEARTSOUND_DERIVED_METRIC_METADATA,
-                    ),
-                }
+        cycle_cache_key = ("heartsound-derived-cycles", file_id)
+        cached_cycles = _parameter_cycle_summary_cache.get(cycle_cache_key)
+        if cached_cycles is None:
+            cached_cycles = _build_cycle_summary_payloads(
+                derived_frame,
+                HEARTSOUND_DERIVED_PARAMETER_SUMMARY_GROUPS,
+                requested_start=requested_start,
+                requested_end=requested_end,
+                group_metadata=HEARTSOUND_DERIVED_GROUP_METADATA,
+                metric_metadata=HEARTSOUND_DERIVED_METRIC_METADATA,
+                validate_cycle_order=True,
             )
+            _parameter_cycle_summary_cache.set(cycle_cache_key, cached_cycles)
+        cycles = cached_cycles
     else:
         raise PlotDataValidationError("unsupported workspace kind for parameter summary")
 

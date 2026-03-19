@@ -73,8 +73,8 @@ The `S1` section shows parameters calculated only from the S1 segment:
 - `S1_RMS`
 - `S1_Area`
 - `S1_Middle`
-- `S1_StartCentroid`
-- `S1_EndCentroid`
+- `S1_S Centroid`
+- `S1_E Centroid`
 
 ### 2.2 `S2`
 
@@ -86,27 +86,31 @@ The `S2` section shows the same metric family for the S2 segment:
 - `S2_RMS`
 - `S2_Area`
 - `S2_Middle`
-- `S2_StartCentroid`
-- `S2_EndCentroid`
+- `S2_S Centroid`
+- `S2_E Centroid`
 
 ### 2.3 `S1-S2`
 
-The `S1-S2` section shows distances and relational timing:
+The `S1-S2` section shows gap-segment parameters between `S1 end` and `S2 start`:
 
-- `S1Start_to_S2Start`
-- `S1End_to_S2Start`
-- `S1Middle_to_S2Middle`
-- `S1End_to_S2End`
-- `S1Start_to_S2End`
-- `S1Peak_to_S2Peak`
+- `S1-S2_Duration`
+- `S1-S2_Peak`
+- `S1-S2_Mean`
+- `S1-S2_Energy`
+
+Additionally, the same `S1-S2` section also includes:
+
+- `S2-S1_Duration`
+- `S2-S1_Peak`
+- `S2-S1_Mean`
+- `S2-S1_Energy`
 
 ### 2.4 `RS Score`
 
-The `RS Score` section groups three event-derived families:
+The `RS Score` section groups two event-derived families:
 
 - `RS Peak`
 - `RS Width`
-- `RS STD`
 
 for:
 
@@ -230,7 +234,7 @@ Unit:
 
 - `ms`
 
-### 4.7 `S1_StartCentroid`
+### 4.7 `S1_S Centroid`
 
 Meaning:
 
@@ -248,7 +252,7 @@ Unit:
 
 - `%`
 
-### 4.8 `S1_EndCentroid`
+### 4.8 `S1_E Centroid`
 
 Meaning:
 
@@ -326,7 +330,7 @@ Unit:
 
 - `ms`
 
-### 5.7 `S2_StartCentroid`
+### 5.7 `S2_S Centroid`
 
 Formula:
 
@@ -336,7 +340,7 @@ Unit:
 
 - `%`
 
-### 5.8 `S2_EndCentroid`
+### 5.8 `S2_E Centroid`
 
 Formula:
 
@@ -346,29 +350,13 @@ Unit:
 
 - `%`
 
-## 6. `S1-S2` Relation Formulas
+## 6. Gap-Segment Formulas
 
-These metrics describe the distance between S1 and S2 landmarks.
-
-### 6.1 `S1Start_to_S2Start`
+### 6.1 `S1-S2_Duration`
 
 Meaning:
 
-- Distance from S1 start to S2 start
-
-Formula:
-
-- `(s2s - s1s) * 0.25`
-
-Unit:
-
-- `ms`
-
-### 6.2 `S1End_to_S2Start`
-
-Meaning:
-
-- Distance from S1 end to S2 start
+- Length of the gap from `S1 end` to `S2 start`
 
 Formula:
 
@@ -378,57 +366,99 @@ Unit:
 
 - `ms`
 
-### 6.3 `S1Middle_to_S2Middle`
+### 6.2 `S1-S2_Peak`
 
 Meaning:
 
-- Distance from S1 midpoint to S2 midpoint
+- Maximum absolute amplitude inside the `S1 end ~ S2 start` gap
 
 Formula:
 
-- `(mid_S2 - mid_S1) * 0.25`
+- `max(abs(x[s1e:s2s]))`
+
+Unit:
+
+- `mV`
+
+### 6.3 `S1-S2_Mean`
+
+Meaning:
+
+- Mean absolute amplitude inside the `S1 end ~ S2 start` gap
+
+Formula:
+
+- `mean(abs(x[s1e:s2s]))`
+
+Unit:
+
+- `mV`
+
+### 6.4 `S1-S2_Energy`
+
+Meaning:
+
+- Energy of the `S1 end ~ S2 start` gap
+
+Formula:
+
+- `sum(x[s1e:s2s]^2) * 0.25`
+
+Unit:
+
+- `mV^2*ms`
+
+### 6.5 `S2-S1_Duration`
+
+Meaning:
+
+- Length of the gap from `S2 end` to `next S1 start`
+
+Formula:
+
+- `(s1n - s2e) * 0.25`
 
 Unit:
 
 - `ms`
 
-### 6.4 `S1End_to_S2End`
+### 6.6 `S2-S1_Peak`
 
 Meaning:
 
-- Distance from S1 end to S2 end
+- Maximum absolute amplitude inside the `S2 end ~ next S1 start` gap
 
 Formula:
 
-- `(s2e - s1e) * 0.25`
+- `max(abs(x[s2e:s1n]))`
 
 Unit:
 
-- `ms`
+- `mV`
 
-### 6.5 `S1Start_to_S2End`
+### 6.7 `S2-S1_Mean`
 
 Meaning:
 
-- Full distance from S1 start to S2 end
+- Mean absolute amplitude inside the `S2 end ~ next S1 start` gap
 
 Formula:
 
-- `(s2e - s1s) * 0.25`
+- `mean(abs(x[s2e:s1n]))`
 
 Unit:
 
-- `ms`
+- `mV`
 
-### 6.6 `S1Peak_to_S2Peak`
+### 6.8 `S2-S1_Energy`
 
 Meaning:
 
-- Distance between the strongest absolute peak inside S1 and the strongest absolute peak inside S2
+- Energy of the `S2 end ~ next S1 start` gap
 
 Formula:
 
-- `(peak_S2 - peak_S1) * 0.25`
+- `sum(x[s2e:s1n]^2) * 0.25`
 
 Unit:
 
@@ -436,7 +466,7 @@ Unit:
 
 ## 7. `HR` Formula
 
-### 7.1 `HeartRate_bpm`
+### 7.1 `HR`
 
 Meaning:
 
@@ -479,25 +509,25 @@ Meaning:
 
 - The raw RS-score value exactly at the selected event peak index
 
-#### 8.1.1 `S1Start_RS_Peak`
+#### 8.1.1 `S1_s RS Peak`
 
 Formula:
 
 - `rs_s1_start[tau_s1s]`
 
-#### 8.1.2 `S1End_RS_Peak`
+#### 8.1.2 `S1_e RS Peak`
 
 Formula:
 
 - `rs_s1_end[tau_s1e]`
 
-#### 8.1.3 `S2Start_RS_Peak`
+#### 8.1.3 `S2_s RS Peak`
 
 Formula:
 
 - `rs_s2_start[tau_s2s]`
 
-#### 8.1.4 `S2End_RS_Peak`
+#### 8.1.4 `S2_e RS Peak`
 
 Formula:
 
@@ -527,52 +557,10 @@ General formula:
 
 Metrics:
 
-- `S1Start_RS_Width`
-- `S1End_RS_Width`
-- `S2Start_RS_Width`
-- `S2End_RS_Width`
-
-Unit:
-
-- `ms`
-
-### 8.3 `RS STD` family
-
-Meaning:
-
-- Weighted temporal spread around the selected RS event peak
-
-Current local window:
-
-- `tau - 80` to `tau + 80`
-- equivalent to `+-20 ms`
-
-General process:
-
-1. Extract local RS-score window around the event peak
-2. Use RS values as weights
-3. Compute weighted mean index
-4. Compute weighted variance in index space
-5. Convert standard deviation from samples to ms
-
-Weighted mean:
-
-- `mu = sum(t * RS(t)) / sum(RS(t))`
-
-Weighted variance:
-
-- `var = sum((t - mu)^2 * RS(t)) / sum(RS(t))`
-
-Final formula:
-
-- `std_ms = sqrt(var) * 0.25`
-
-Metrics:
-
-- `S1Start_RS_STD`
-- `S1End_RS_STD`
-- `S2Start_RS_STD`
-- `S2End_RS_STD`
+- `S1_s RS Width`
+- `S1_e RS Width`
+- `S2_s RS Width`
+- `S2_e RS Width`
 
 Unit:
 
@@ -602,9 +590,9 @@ This part answers:
 
 This part answers:
 
-- How far apart S1 and S2 landmarks are
-- How systolic timing is distributed between the two sounds
-- How midpoint-based and peak-based timing differ
+- How large the S1-to-S2 gap is
+- How strong the S1-to-S2 gap signal is
+- How much energy the S1-to-S2 and S2-to-S1 gaps contain
 
 ### 9.4 `RS Score`
 
@@ -612,7 +600,6 @@ This part answers:
 
 - How strong the selected RS event peak is
 - How wide the RS event is around half-height
-- How temporally concentrated or spread the RS event is
 
 ### 9.5 `HR`
 
@@ -629,11 +616,11 @@ Current mapping:
 
 - `S1` metrics -> S1 range
 - `S2` metrics -> S2 range
-- `S1-S2` metrics -> interval between the corresponding S1 and S2 landmarks
+- `S1-S2` metrics -> gap from `S1 end` to `S2 start`
+- `S2-S1` metrics -> gap from `S2 end` to `next S1 start`
 - `HR` -> current cycle to next cycle
 - `RS Peak` -> event point
 - `RS Width` -> half-height contiguous width region
-- `RS STD` -> local `+-20 ms` RS window
 
 ## 11. Notes
 
@@ -641,4 +628,3 @@ Current mapping:
 - UI grouping reflects the current implementation in `frontend/src/App.tsx`
 - This document describes the current shipped formula set only
 - Future parameter ideas in `ideas/Parameter.py` are not included here unless they are already implemented
-

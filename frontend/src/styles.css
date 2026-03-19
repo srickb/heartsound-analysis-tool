@@ -823,6 +823,34 @@ body {
   justify-content: flex-end;
 }
 
+.parameter-download-button {
+  min-width: 0;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(88, 166, 255, 0.45);
+  background: rgba(88, 166, 255, 0.14);
+  color: #c9d1d9;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
+}
+
+.parameter-download-button:hover:not(:disabled) {
+  border-color: rgba(121, 192, 255, 0.7);
+  background: rgba(88, 166, 255, 0.22);
+}
+
+.parameter-download-button:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
 .parameter-highlight-toggle {
   width: auto;
   min-width: 0;
@@ -1064,10 +1092,12 @@ body {
 }
 
 .heartsound-parameter-section-header {
-  padding: 12px 14px 10px;
+  padding: 10px 14px 8px;
   border-bottom: 1px solid rgba(48, 54, 61, 0.9);
   display: grid;
-  gap: 4px;
+  gap: 3px;
+  min-height: 56px;
+  align-content: start;
 }
 
 .heartsound-parameter-section.is-s1 .heartsound-parameter-section-header {
@@ -1095,12 +1125,14 @@ body {
   font-weight: 800;
   color: #f0f6fc;
   letter-spacing: 0.02em;
+  line-height: 1.1;
 }
 
 .heartsound-parameter-section-subtitle {
   font-size: 11px;
   line-height: 1.4;
   color: #8b949e;
+  min-height: 24px;
 }
 
 .heartsound-parameter-section-body {

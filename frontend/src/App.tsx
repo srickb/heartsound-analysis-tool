@@ -296,6 +296,8 @@ interface PanelCardProps {
   onPrefetchRange: (panelId: PanelId, start: number, end: number) => void;
   onSelectCycle: (panelId: PanelId, cycleIndex: number) => void;
   onSelectParameterMetric: (panelId: PanelId, metricKey: string) => void;
+  onDownloadParameterExport: (panelId: PanelId) => void;
+  isParameterExporting: boolean;
 }
 
 type DataPair = [number, number];
@@ -1466,6 +1468,38 @@ const extractErrorMessage = (payload: unknown): string => {
   return "request failed";
 };
 
+const extractDownloadFilename = (response: Response, fallback: string): string => {
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+
+  const filenameMatch = disposition.match(/filename=\"?([^\";]+)\"?/i);
+  if (filenameMatch?.[1]) {
+    return filenameMatch[1];
+  }
+
+  return fallback;
+};
+
+const triggerBlobDownload = (blob: Blob, filename: string): void => {
+  const objectUrl = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(objectUrl);
+  }, 0);
+};
+
 const isTypingTarget = (target: EventTarget | null): boolean => {
   if (!(target instanceof HTMLElement)) {
     return false;
@@ -1504,9 +1538,12 @@ const formatMetricValue = (value: number): string => {
   return value.toFixed(2);
 };
 
-const formatHeartsoundParameterMetricValue = (value: number): string => {
+const formatHeartsoundParameterMetricValue = (value: number, metricKey?: string): string => {
   if (!Number.isFinite(value)) {
     return "-";
+  }
+  if (metricKey && /^S[12][SE]_RS_Peak$/.test(metricKey)) {
+    return String(Math.round(value));
   }
   return formatMetricValue(value);
 };
@@ -1525,32 +1562,6 @@ const getLookupValue = (lookup: Map<number, number>, index: number | null | unde
   }
   const value = lookup.get(index);
   return value !== undefined && Number.isFinite(value) ? value : null;
-};
-
-const getAbsolutePeakIndexInRange = (
-  lookup: Map<number, number>,
-  startIndex: number,
-  endIndex: number
-): number | null => {
-  if (endIndex <= startIndex) {
-    return null;
-  }
-
-  let bestIndex: number | null = null;
-  let bestValue = -Infinity;
-  for (let index = startIndex; index < endIndex; index += 1) {
-    const value = lookup.get(index);
-    if (value === undefined || !Number.isFinite(value)) {
-      continue;
-    }
-    const absoluteValue = Math.abs(value);
-    if (absoluteValue > bestValue) {
-      bestValue = absoluteValue;
-      bestIndex = index;
-    }
-  }
-
-  return bestIndex;
 };
 
 const getRsWidthBounds = (lookup: Map<number, number>, peakIndex: number | null | undefined): [number, number] | null => {
@@ -1604,56 +1615,56 @@ const getHeartsoundParameterTooltipContent = (
       return {
         title: metricLabel,
         summary: `${prefix} start에서 ${prefix} end까지`,
-        schematic: `${prefix}_S ~ ${prefix}_E`,
+        schematic: `${prefix} start ~ ${prefix} end`,
       };
     }
     if (/_Peak_mV$/.test(metricKey)) {
       return {
         title: metricLabel,
         summary: `${prefix} 구간의 최대 |x|`,
-        schematic: `${prefix} segment -> |x| max`,
+        schematic: `${prefix} 구간 ~ |x| max`,
       };
     }
     if (/_mean_mV$/.test(metricKey)) {
       return {
         title: metricLabel,
         summary: `${prefix} 구간의 평균 |x|`,
-        schematic: `mean(|x[n]|) on ${prefix}`,
+        schematic: `${prefix} 구간 ~ mean(|x[n]|)`,
       };
     }
     if (/_RMS_mV$/.test(metricKey)) {
       return {
         title: metricLabel,
         summary: `${prefix} 구간의 RMS`,
-        schematic: `sqrt(mean(x[n]^2))`,
+        schematic: `${prefix} 구간 ~ sqrt(mean(x[n]^2))`,
       };
     }
     if (/_Area_mVms$/.test(metricKey)) {
       return {
         title: metricLabel,
         summary: `${prefix} 구간의 |x| 적분값`,
-        schematic: `sum(|x[n]|) * 0.25`,
+        schematic: `${prefix} 구간 ~ sum(|x[n]|) * 0.25`,
       };
     }
     if (/_Middle_ms$/.test(metricKey)) {
       return {
         title: metricLabel,
         summary: `${prefix} start와 end의 중간점`,
-        schematic: `(${prefix}_S + ${prefix}_E) / 2`,
+        schematic: `${prefix} start ~ middle ~ ${prefix} end`,
       };
     }
     if (/_S_centroid_pct$/.test(metricKey)) {
       return {
         title: metricLabel,
         summary: `${prefix} 중심의 start 쪽 치우침`,
-        schematic: `${prefix}_S ~ centroid ~ middle`,
+        schematic: `${prefix} start ~ centroid ~ middle`,
       };
     }
     if (/_E_centroid_pct$/.test(metricKey)) {
       return {
         title: metricLabel,
         summary: `${prefix} 중심의 end 쪽 치우침`,
-        schematic: `middle ~ centroid ~ ${prefix}_E`,
+        schematic: `middle ~ centroid ~ ${prefix} end`,
       };
     }
   }
@@ -1674,56 +1685,37 @@ const getHeartsoundParameterTooltipContent = (
     };
   }
 
-  if (/^S1[SE]_RS_STD$|^S2[SE]_RS_STD$/.test(metricKey)) {
-    return {
-      title: metricLabel,
-      summary: "peak 주변 +/-20 ms 가중 spread",
-      schematic: "[tau-20ms ... tau ... tau+20ms]",
-    };
-  }
-
   switch (metricKey) {
-    case "S1_S_to_S2_S_ms":
-      return { title: metricLabel, summary: "S1 start에서 S2 start까지", schematic: "S1_S ~ S2_S" };
-    case "S1_E_to_S2_S_ms":
-      return { title: metricLabel, summary: "S1 end에서 S2 start까지", schematic: "S1_E ~ S2_S" };
-    case "S1_mid_to_S2_mid_ms":
-      return { title: metricLabel, summary: "S1 middle에서 S2 middle까지", schematic: "S1_mid ~ S2_mid" };
-    case "S1_E_to_S2_E_ms":
-      return { title: metricLabel, summary: "S1 end에서 S2 end까지", schematic: "S1_E ~ S2_E" };
-    case "S1_S_to_S2_E_ms":
-      return { title: metricLabel, summary: "S1 start에서 S2 end까지", schematic: "S1_S ~ S2_E" };
-    case "S1_peak_to_S2_peak_ms":
-      return { title: metricLabel, summary: "S1 peak에서 S2 peak까지", schematic: "S1_peak ~ S2_peak" };
+    case "S1S2_Duration_ms":
+      return { title: metricLabel, summary: "S1 end에서 S2 start까지", schematic: "S1 end ~ S2 start" };
+    case "S1S2_Peak_mV":
+      return { title: metricLabel, summary: "S1-S2 구간의 최대 |x|", schematic: "S1 end ~ S2 start ~ |x| max" };
+    case "S1S2_mean_mV":
+      return { title: metricLabel, summary: "S1-S2 구간의 평균 |x|", schematic: "S1 end ~ S2 start ~ mean(|x[n]|)" };
+    case "S1S2_Energy_mV2ms":
+      return { title: metricLabel, summary: "S1-S2 구간의 에너지", schematic: "S1 end ~ S2 start ~ sum(x[n]^2) * 0.25" };
+    case "S2S1_Duration_ms":
+      return { title: metricLabel, summary: "S2 end에서 다음 S1 start까지", schematic: "S2 end ~ next S1 start" };
+    case "S2S1_Peak_mV":
+      return { title: metricLabel, summary: "S2-S1 구간의 최대 |x|", schematic: "S2 end ~ next S1 start ~ |x| max" };
+    case "S2S1_mean_mV":
+      return { title: metricLabel, summary: "S2-S1 구간의 평균 |x|", schematic: "S2 end ~ next S1 start ~ mean(|x[n]|)" };
+    case "S2S1_Energy_mV2ms":
+      return { title: metricLabel, summary: "S2-S1 구간의 에너지", schematic: "S2 end ~ next S1 start ~ sum(x[n]^2) * 0.25" };
     default:
       return null;
   }
 };
 
-const getRsStdWindowBounds = (
-  peakIndex: number | null | undefined,
-  maxIndex: number
-): [number, number] | null => {
-  if (peakIndex === null || peakIndex === undefined || maxIndex < 0) {
-    return null;
-  }
-
-  const left = clampNumber(peakIndex - 80, 0, maxIndex);
-  const right = clampNumber(peakIndex + 80, left, maxIndex);
-  return left <= right ? [left, right] : null;
-};
-
 const buildParameterMeasurementAnnotation = (
   metricKey: string,
   cycleContext: HeartsoundCycleMeasurementContext,
-  amplitudeLookup: Map<number, number>,
   rsLookups: {
     s1Start: Map<number, number>;
     s1End: Map<number, number>;
     s2Start: Map<number, number>;
     s2End: Map<number, number>;
-  },
-  maxIndex: number
+  }
 ): ParameterMeasurementAnnotation | null => {
   const { s1Overlay, s2Overlay, nextS1Overlay } = cycleContext;
   if (!s1Overlay) {
@@ -1735,10 +1727,6 @@ const buildParameterMeasurementAnnotation = (
   const s2Start = s2Overlay?.areaStart ?? null;
   const s2End = s2Overlay?.areaEnd ?? null;
   const nextS1Start = nextS1Overlay?.areaStart ?? null;
-  const s1Mid = Math.round((s1Start + s1End) / 2);
-  const s2Mid = s2Start !== null && s2End !== null ? Math.round((s2Start + s2End) / 2) : null;
-  const s1Peak = getAbsolutePeakIndexInRange(amplitudeLookup, s1Start, s1End);
-  const s2Peak = s2Start !== null && s2End !== null ? getAbsolutePeakIndexInRange(amplitudeLookup, s2Start, s2End) : null;
 
   const createRange = (label: string, color: string, startIndex: number | null, endIndex: number | null) => {
     if (startIndex === null || endIndex === null) {
@@ -1776,18 +1764,16 @@ const buildParameterMeasurementAnnotation = (
   }
 
   switch (metricKey) {
-    case "S1_S_to_S2_S_ms":
-      return createRange("S1 start -> S2 start", "#f97316", s1Start, s2Start);
-    case "S1_E_to_S2_S_ms":
+    case "S1S2_Duration_ms":
+    case "S1S2_Peak_mV":
+    case "S1S2_mean_mV":
+    case "S1S2_Energy_mV2ms":
       return createRange("S1 end -> S2 start", "#f97316", s1End, s2Start);
-    case "S1_mid_to_S2_mid_ms":
-      return createRange("S1 middle -> S2 middle", "#f97316", s1Mid, s2Mid);
-    case "S1_E_to_S2_E_ms":
-      return createRange("S1 end -> S2 end", "#f97316", s1End, s2End);
-    case "S1_S_to_S2_E_ms":
-      return createRange("S1 start -> S2 end", "#f97316", s1Start, s2End);
-    case "S1_peak_to_S2_peak_ms":
-      return createRange("S1 peak -> S2 peak", "#f97316", s1Peak, s2Peak);
+    case "S2S1_Duration_ms":
+    case "S2S1_Peak_mV":
+    case "S2S1_mean_mV":
+    case "S2S1_Energy_mV2ms":
+      return createRange("S2 end -> next S1 start", "#22c55e", s2End, nextS1Start);
     case "HeartRate_bpm":
       return createRange("Cycle -> Cycle", "#f9c74a", s1Start, nextS1Start);
     case "S1S_RS_Peak":
@@ -1813,22 +1799,6 @@ const buildParameterMeasurementAnnotation = (
     case "S2E_RS_Width_ms": {
       const bounds = getRsWidthBounds(rsLookups.s2End, s2Overlay?.endPeak?.[0]);
       return createRange("S2 end RS width", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
-    }
-    case "S1S_RS_STD": {
-      const bounds = getRsStdWindowBounds(s1Overlay.startPeak?.[0], maxIndex);
-      return createRange("S1 start RS std window", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
-    }
-    case "S1E_RS_STD": {
-      const bounds = getRsStdWindowBounds(s1Overlay.endPeak?.[0], maxIndex);
-      return createRange("S1 end RS std window", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
-    }
-    case "S2S_RS_STD": {
-      const bounds = getRsStdWindowBounds(s2Overlay?.startPeak?.[0], maxIndex);
-      return createRange("S2 start RS std window", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
-    }
-    case "S2E_RS_STD": {
-      const bounds = getRsStdWindowBounds(s2Overlay?.endPeak?.[0], maxIndex);
-      return createRange("S2 end RS std window", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
     }
     default:
       return null;
@@ -2219,7 +2189,9 @@ const PanelCard = memo(function PanelCard({
   onSliderRangeCommit,
   onPrefetchRange,
   onSelectCycle,
-  onSelectParameterMetric
+  onSelectParameterMetric,
+  onDownloadParameterExport,
+  isParameterExporting
 }: PanelCardProps) {
   const sliderDebounceRef = useRef<number | null>(null);
 
@@ -2285,18 +2257,17 @@ const PanelCard = memo(function PanelCard({
       return [];
     }
 
-    const findGroup = (key: string) => displayedParameterGroups.find((group) => group.key === key);
+    const groupMap = new Map(displayedParameterGroups.map((group) => [group.key, group] as const));
+    const findGroup = (key: string) => groupMap.get(key);
     const compactGroups = (groups: Array<ParameterSummaryGroup | null>) =>
       groups.filter((group): group is ParameterSummaryGroup => group !== null);
 
     const rsPeakGroup = findGroup("rs_peak");
     const rsWidthGroup = findGroup("rs_width");
-    const rsStdGroup = findGroup("rs_std");
     const rsScoreGroup = mergeParameterGroupMetrics(
       [
         rsPeakGroup ?? null,
         rsWidthGroup ?? null,
-        rsStdGroup ?? null,
       ],
       "rs_score",
       "RS Score"
@@ -2322,9 +2293,9 @@ const PanelCard = memo(function PanelCard({
       {
         key: "relation",
         title: "S1-S2",
-        subtitle: "두 심음 사이의 간격과 관계 값",
+        subtitle: "S1-S2와 S2-S1 gap 구간에서 계산된 값",
         toneClassName: "is-relation",
-        groups: compactGroups([findGroup("s1_s2_relation") ?? null]),
+        groups: compactGroups([findGroup("s1_s2_relation") ?? null, findGroup("s2_s1_relation") ?? null]),
         metrics: [],
       },
       {
@@ -3068,7 +3039,6 @@ const PanelCard = memo(function PanelCard({
       workspaceKind === "heartsound" && panel.visibleSeries.s4Candidates
         ? heartsoundCandidates.s4Candidates
         : [];
-    const amplitudeLookup = buildPairValueLookup(amplitudePairs);
     const rsLookups = {
       s1Start: buildPairValueLookup(s1StartPairs),
       s1End: buildPairValueLookup(s1EndPairs),
@@ -3121,9 +3091,7 @@ const PanelCard = memo(function PanelCard({
         ? buildParameterMeasurementAnnotation(
             selectedParameterMetricKey,
             selectedCycleMeasurementContext,
-            amplitudeLookup,
-            rsLookups,
-            maxIndex
+            rsLookups
           )
         : null;
     const overviewPairs = overviewPlot
@@ -4146,6 +4114,14 @@ const PanelCard = memo(function PanelCard({
                     <div className="parameter-summary-header">
                       <div className="parameter-summary-title">Parameter window</div>
                       <div className="parameter-summary-header-actions">
+                        <button
+                          type="button"
+                          className="parameter-download-button"
+                          onClick={() => onDownloadParameterExport(panel.panelId)}
+                          disabled={isParameterExporting}
+                        >
+                          {isParameterExporting ? "Preparing xlsx..." : "Download xlsx"}
+                        </button>
                         <label
                           className={`panel-parameter-toggle parameter-highlight-toggle${
                             panel.showSelectedCycleHighlight ? " is-active" : ""
@@ -4277,7 +4253,10 @@ const PanelCard = memo(function PanelCard({
                                   >
                                     <span className="parameter-cycle-heart-rate-label">HR</span>
                                     <span className="parameter-cycle-heart-rate-value">
-                                      {formatHeartsoundParameterMetricValue(heartRateMetric.mean)}
+                                      {formatHeartsoundParameterMetricValue(
+                                        heartRateMetric.mean,
+                                        heartRateMetric.key
+                                      )}
                                       {heartRateMetric.unit ? ` ${heartRateMetric.unit}` : ""}
                                     </span>
                                     {heartRateTooltip ? (
@@ -4314,9 +4293,9 @@ const PanelCard = memo(function PanelCard({
                                   <div className="heartsound-parameter-section-subtitle">{section.subtitle}</div>
                                 </div>
                                 <div className="heartsound-parameter-section-body">
-                                  {section.groups.map((group, groupIndex) => (
+                                  {section.groups.map((group) => (
                                     <div key={group.key} className="heartsound-parameter-block">
-                                      {section.groups.length > 1 && groupIndex > 0 ? (
+                                      {section.groups.length > 1 && section.key !== "relation" ? (
                                         <div
                                           className={`heartsound-parameter-block-title${
                                             group.key.startsWith("rs_score") ? " is-rs-score" : ""
@@ -4344,7 +4323,7 @@ const PanelCard = memo(function PanelCard({
                                               <div className="heartsound-parameter-metric-name">{metric.label}</div>
                                               <div className="heartsound-parameter-metric-value-row">
                                                 <div className="heartsound-parameter-metric-value">
-                                                  {formatHeartsoundParameterMetricValue(metric.mean)}
+                                                  {formatHeartsoundParameterMetricValue(metric.mean, metric.key)}
                                                 </div>
                                                 {metricUnit && metricUnit !== "무단위" ? (
                                                   <div className="heartsound-parameter-metric-unit">{metricUnit}</div>
@@ -4458,6 +4437,7 @@ function App() {
   const [changeConfirmPassword, setChangeConfirmPassword] = useState<string>("");
   const [adminMessage, setAdminMessage] = useState<string>("");
   const [adminSubmitting, setAdminSubmitting] = useState<boolean>(false);
+  const [parameterExportPanelId, setParameterExportPanelId] = useState<PanelId | null>(null);
   const [adminAccessModeDraft, setAdminAccessModeDraft] = useState<AccessMode>("open");
   const [latestAccessCodeExpiresAt, setLatestAccessCodeExpiresAt] = useState<string | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState<boolean>(false);
@@ -4810,6 +4790,57 @@ function App() {
       return payload;
     },
     [refreshAuthState]
+  );
+
+  const downloadParameterExportForPanel = useCallback(
+    async (panelId: PanelId) => {
+      const panel = panels.find((item) => item.panelId === panelId);
+      if (!panel) {
+        return;
+      }
+
+      const fileId = getParameterSourceFileId(panel);
+      if (!fileId) {
+        updateAppState((previous) => ({
+          ...previous,
+          statusMessage: "No parameter source is linked to this panel."
+        }));
+        return;
+      }
+
+      const sourceName = getParameterSourceName(panel) ?? "parameters";
+      const fallbackFilename = `${sourceName.replace(/\.[^.]+$/, "")}_parameters.xlsx`;
+      setParameterExportPanelId(panelId);
+
+      try {
+        const response = await fetch(`/api/files/${fileId}/parameter-export`);
+        if (response.status === 401) {
+          await refreshAuthState();
+          throw new Error("login required");
+        }
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(extractErrorMessage(payload));
+        }
+
+        const blob = await response.blob();
+        const filename = extractDownloadFilename(response, fallbackFilename);
+        triggerBlobDownload(blob, filename);
+        updateAppState((previous) => ({
+          ...previous,
+          statusMessage: `Downloaded ${filename}`
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "failed to download parameter xlsx";
+        updateAppState((previous) => ({
+          ...previous,
+          statusMessage: `Download failed: ${message}`
+        }));
+      } finally {
+        setParameterExportPanelId((current) => (current === panelId ? null : current));
+      }
+    },
+    [panels, refreshAuthState, updateAppState]
   );
 
   const fetchUnsupervisedSummary = useCallback(
@@ -6544,6 +6575,8 @@ function App() {
                     onPrefetchRange={prefetchRangePlot}
                     onSelectCycle={selectPanelCycle}
                     onSelectParameterMetric={selectPanelParameterMetric}
+                    onDownloadParameterExport={downloadParameterExportForPanel}
+                    isParameterExporting={parameterExportPanelId === panelId}
                   />
                 );
               })}
