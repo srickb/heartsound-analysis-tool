@@ -1,0 +1,98 @@
+{
+  "ai_instruction": "이 JSON은 ChatGPT 웹에 붙여 넣어 연구일지 요약을 만들기 위한 구조화된 하루 연구 기록입니다.",
+  "llm_task": {
+    "task": "summarize_research_log",
+    "prompt": "이 JSON은 하루 연구 기록입니다. 이 내용을 과장 없이 사람이 읽기 좋은 연구일지 형태로 정리해주세요. 실제 기록만 기반으로 작성하고 존재하지 않는 결과는 추측하지 마세요. 모든 문장은 '입니다.' 체로 작성하세요."
+  },
+  "rules": [
+    "의미 없는 날에는 기록을 생성하지 않는다.",
+    "코드 diff를 그대로 복사하지 않는다.",
+    "존재하지 않는 결과를 추측하지 않는다.",
+    "모든 문장은 \"입니다.\" 체로 작성한다.",
+    "연구 맥락 없는 기술적 설명은 작성하지 않는다.",
+    "추상적인 표현(예: 좋아졌다, 개선됐다)은 가능한 한 피한다.",
+    "미래 예측을 사실처럼 작성하지 않는다.",
+    "커밋 메시지를 그대로 복붙하지 않는다.",
+    "실험이 없으면 \"실험 실행 없음\"으로 명시한다.",
+    "새로운 연구 아이디어는 반드시 Key Ideas 섹션에 정리한다.",
+    "코드 변경은 반드시 \"아이디어 또는 연구 목적\"과 연결해서 설명한다.",
+    "과거 연구를 재해석하거나 추가 가정을 만들지 않는다."
+  ],
+  "project_context_ref": "project_context.json",
+  "daily_record": {
+    "date": "2026-03-10",
+    "research_intent": "",
+    "research_topics": [
+      ".github/workflows/daily_research_log.yml 관련 작업",
+      ".gitignore 관련 작업",
+      "DAILY_LOG_USAGE.md 관련 작업",
+      "README.md 관련 작업",
+      "project_context.json 관련 작업"
+    ],
+    "key_ideas": [],
+    "code_changes": [
+      {
+        "file": ".github/workflows/daily_research_log.yml",
+        "reason": ".github/workflows/daily_research_log.yml 관련 작업과 연결된 변경입니다."
+      },
+      {
+        "file": ".gitignore",
+        "reason": ".github/workflows/daily_research_log.yml 관련 작업과 연결된 변경입니다."
+      },
+      {
+        "file": "DAILY_LOG_USAGE.md",
+        "reason": ".github/workflows/daily_research_log.yml 관련 작업과 연결된 변경입니다."
+      },
+      {
+        "file": "README.md",
+        "reason": ".github/workflows/daily_research_log.yml 관련 작업과 연결된 변경입니다."
+      },
+      {
+        "file": "project_context.json",
+        "reason": ".github/workflows/daily_research_log.yml 관련 작업과 연결된 변경입니다."
+      },
+      {
+        "file": "scripts/generate_daily_log.py",
+        "reason": ".github/workflows/daily_research_log.yml 관련 작업과 연결된 변경입니다."
+      },
+      {
+        "file": "ideas/Autometic Idea.py",
+        "reason": ".github/workflows/daily_research_log.yml 관련 작업과 연결된 변경입니다."
+      }
+    ],
+    "today_commit_files": [
+      ".github/workflows/daily_research_log.yml",
+      ".gitignore",
+      "DAILY_LOG_USAGE.md",
+      "README.md",
+      "daily_logs/.gitkeep",
+      "daily_logs/structured/.gitkeep",
+      "experiments/.gitkeep",
+      "notes/daily_raw/.gitkeep",
+      "project_context.json",
+      "scripts/generate_daily_log.py",
+      "ideas/Autometic Idea.py"
+    ],
+    "results": [
+      "실험 실행 없음"
+    ],
+    "open_questions": [],
+    "next_actions": [],
+    "knowledge_update": [],
+    "confidence_level": "medium",
+    "source_evidence": {
+      "commit_count": 3,
+      "commit_shas": [
+        "66f75743577d31e8445a98e1a842bb6e17f492fc",
+        "f6ad8dd0b57081ea08113a269255a0762a77a008",
+        "7f917491393fd6305a5ce6866fc92d99ad56f433"
+      ],
+      "notes_used": false,
+      "experiment_used": false,
+      "note_file": "",
+      "experiment_file": "",
+      "experiment_status": "missing",
+      "project_goal": "Detect murmur and abnormal heart sounds from PCG data"
+    }
+  }
+}

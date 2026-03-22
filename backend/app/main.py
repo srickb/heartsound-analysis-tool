@@ -34,6 +34,7 @@ from app.services.file_service import (
 from app.services.plot_data_service import (
     PlotDataNotFoundError,
     PlotDataValidationError,
+    build_labeling_export_workbook,
     build_parameter_export_workbook,
     get_plot_data,
     get_parameter_summary,
@@ -344,6 +345,15 @@ class DeleteFilesRequest(BaseModel):
     fileIds: list[str] = Field(default_factory=list, min_length=1)
 
 
+class LabelMarkerRequest(BaseModel):
+    index: int
+    keyTag: str = Field(min_length=1, max_length=1)
+
+
+class LabelingExportRequest(BaseModel):
+    markers: list[LabelMarkerRequest] = Field(default_factory=list)
+
+
 @app.delete("/api/files")
 def delete_file_items(payload: DeleteFilesRequest, request: Request) -> dict[str, Any]:
     try:
@@ -411,6 +421,32 @@ def download_file_parameter_export(
     try:
         require_viewer_access(_session_token(request))
         workbook_stream, export_filename = build_parameter_export_workbook(file_id)
+        headers = {"Content-Disposition": f'attachment; filename="{export_filename}"'}
+        return StreamingResponse(
+            workbook_stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers=headers,
+        )
+    except AuthError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    except PlotDataNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except PlotDataValidationError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.post("/api/files/{file_id}/labeling-export")
+def download_file_labeling_export(
+    file_id: str,
+    payload: LabelingExportRequest,
+    request: Request,
+) -> StreamingResponse:
+    try:
+        require_viewer_access(_session_token(request))
+        workbook_stream, export_filename = build_labeling_export_workbook(
+            file_id,
+            [marker.model_dump() for marker in payload.markers],
+        )
         headers = {"Content-Disposition": f'attachment; filename="{export_filename}"'}
         return StreamingResponse(
             workbook_stream,

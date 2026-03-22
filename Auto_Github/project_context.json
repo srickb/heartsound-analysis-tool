@@ -1,0 +1,9 @@
+{
+  "project_name": "Heart Sound Analysis",
+  "goal": "Detect murmur and abnormal heart sounds from PCG data",
+  "data_type": "PCG heart sound",
+  "sampling_rate": 4000,
+  "framework": "TensorFlow",
+  "language": "Python",
+  "notes": "This file stores stable project-level context and should be edited manually as the project evolves."
+}

@@ -1,643 +1,495 @@
-# HeartSound Parameter Formula Reference
+# HeartSound Analysis Tool: 제품 요구사항 정의서 (PRD)
 
-Last updated: 2026-03-19
+Last updated: 2026-03-22  
+Status: Draft  
+Document owner: Product / Research / Implementation alignment document
 
-이 문서는 HeartSound workspace의 하단 `Parameter` panel에 현재 표시되는 parameter group을 설명한다.
+이 문서는 `/Users/ms/Desktop/Tool` 프로젝트의 제품 수준 요구사항을 정리한다.
+목적은 현재 구현된 연구용 HeartSound/ECG 분석 Tool을 기준으로, 제품의 목표,
+사용자 workflow, 기능 요구사항, 비기능 요구사항, 규제 대응 방향, 단계별
+로드맵을 한 문서 안에서 정렬하는 데 있다.
 
-설명 범위는 **현재 코드에 실제로 구현된 formula**만을 대상으로 한다.
+이 문서는 다음 역할을 가진다.
 
-현재 UI의 top-level parameter 구성은 다음과 같다.
+- 현재 구현 문서와 별도로 제품 목표와 방향을 정의한다.
+- 무엇이 이미 구현되었고 무엇이 향후 목표인지 구분한다.
+- 연구용 분석 Tool에서 제품화 가능한 소프트웨어로 확장할 때의 기준점을 만든다.
 
-- `S1`
-- `S2`
-- `S1-S2`
-- `RS Score`
+이 문서는 다음 문서와 함께 읽는 것을 권장한다.
 
-추가로:
+- `process/current_implementation_spec.md`
+- `process/heartsound_parameter_formula_reference.md`
+- `ideas/12_prd_regulatory_and_approval_guide.md`
 
-- `HR`은 cycle selector 옆에 별도의 강조 카드로 표시된다.
+## 1. Executive Summary
 
-## 1. 공통 정의
+HeartSound Analysis Tool은 HeartSound 및 ECG 신호를 업로드하고, 연결된 `wave`,
+`parameter`, `unsupervised` 파일을 함께 검토하며, signal waveform, event
+structure, cycle, parameter를 한 화면에서 해석할 수 있도록 지원하는 브라우저
+기반 분석 소프트웨어이다.
 
-### 1.1 Input signal
+현재 제품의 중심은 HeartSound workflow에 있다. 사용자는 S1/S2 기반 cycle 구조를
+검토하고, S3/S4 candidate overlay를 확인하며, wave playback과 동기화된 chart를
+기반으로 parameter를 cycle 단위로 확인할 수 있다. 또한 one-panel 또는 two-panel
+비교 구조를 활용해 여러 데이터셋을 연구 목적으로 빠르게 비교할 수 있다.
 
-- `x[n]`  
-  HeartSound amplitude signal
+현재 단계의 제품 성격은 연구실 내부 검증 및 알고리즘 구조화에 가까우며,
+질환 확진이나 자동 임상 판정을 제공하는 제품으로 정의하지 않는다. 다만 향후에는
+AI 기반 이벤트 검출, 파라미터 분석, 의료전문가 해석 지원 방향으로 확장 가능성이
+있으므로, PRD 단계에서부터 제품 범위와 규제 대응 방향을 함께 관리한다.
 
-- unit:  
-  `mV`
+## 2. Product Vision
 
-### 1.2 Sampling
+본 제품의 비전은 심음 및 ECG 기반 분석 workflow를 하나의 일관된 작업 환경으로
+통합하는 것이다.
 
-현재 backend의 고정 Sampling 가정:
+사용자가 달성해야 하는 핵심 가치는 다음과 같다.
 
-- `fs = 4000 Hz`
-- `1 sample = 0.25 ms`
+- 파일 업로드와 연결 확인에 시간을 덜 쓰고 분석에 집중할 수 있어야 한다.
+- waveform, audio, cycle, parameter를 분리된 도구가 아니라 하나의 review flow에서
+  이해할 수 있어야 한다.
+- HeartSound 이벤트 구조를 사람이 더 빠르고 안정적으로 검토할 수 있어야 한다.
+- 향후에는 연구용 분석을 넘어 의료전문가의 해석을 지원하는 제품 방향으로
+  확장할 수 있어야 한다.
 
-### 1.3 현재 cycle 정의
+제품 비전의 핵심 문장은 다음과 같다.
 
-유효한 cycle은 다음 조건을 만족한다.
+> HeartSound 및 ECG 신호의 이벤트 구조와 파라미터를 시각적, 청각적, 구조적으로
+> 함께 검토할 수 있는 분석 workspace를 제공하여, 연구 검토와 향후 임상 해석 지원의
+> 기반을 만든다.
+
+## 3. Problem Statement
+
+현재 심음 및 ECG 기반 분석 workflow는 보통 다음 문제를 가진다.
+
+- raw signal, audio, parameter, annotation이 서로 다른 파일과 도구에 분산된다.
+- S1/S2 구조와 cycle을 사람이 반복적으로 수작업 확인해야 한다.
+- 추가 이벤트 후보나 cycle 간 차이를 빠르게 비교하기 어렵다.
+- chart와 parameter 사이를 계속 오가며 해석해야 한다.
+- 연구 검토 결과를 외부 분석용 산출물로 다시 정리하는 데 시간이 든다.
+
+본 제품은 이 문제를 다음 방식으로 줄이려 한다.
+
+- 업로드 파일의 역할과 연결 관계를 구조화한다.
+- waveform, playback, cycle, parameter를 한 panel workflow로 묶는다.
+- candidate overlay와 cycle navigation으로 review 속도를 높인다.
+- export 가능한 derived parameter 구조를 제공한다.
+
+## 4. Target Users and Usage Context
+
+### 4.1 Primary Users
+
+- 연구자
+- 생체신호 분석 실무자
+- 내부 검증 담당자
+
+### 4.2 Secondary / Future Users
+
+- 의료전문가
+- 의료기관 내 분석 지원 사용자
+- 알고리즘 검증 및 품질 관리 담당자
+
+### 4.3 Usage Context
+
+현재 사용 환경은 연구실 또는 내부 검토 환경에 가깝다.
+
+- 로컬 Mac 기반 launcher로 실행
+- 브라우저 기반 dashboard 사용
+- 필요 시 code 기반 제한 공유 또는 public share URL 사용
+- dataset 비교, cycle 검토, 파라미터 확인, export 중심 workflow
+
+향후 제품화 단계에서는 사용 환경이 다음으로 확장될 수 있다.
+
+- 보다 구조화된 사용자 권한 관리
+- 임상 해석 지원 맥락
+- 의료기관 또는 외부 검토 환경에서의 사용
+
+## 5. Current Product Context
+
+현재 저장소 기준으로 실제 구현 상태는 다음과 같다.
+
+- `heartsound`와 `ecg` workspace를 지원한다.
+- 파일 역할은 `data`, `wave`, `parameter`, `unsupervised`로 구분된다.
+- one-panel mode와 two-panel mode를 지원한다.
+- HeartSound chart는 amplitude, RS score, S1/S2 area, S3/S4 candidate,
+  cycle highlight, parameter measurement, unsupervised overlay, audio playhead를
+  지원한다.
+- wave playback은 header controls, seek, reset, speed cycle, draggable playhead를
+  지원한다.
+- HeartSound parameter는 별도 업로드 없이 `data` 파일에서 직접 파생된다.
+- xlsx export가 가능하다.
+- launcher, access mode, one-time code, share tunnel workflow가 존재한다.
+
+이 PRD는 위 현재 상태를 기반으로 하지만, 현재 구현 문서 자체를 대체하지는 않는다.
+구현 세부는 `process/current_implementation_spec.md`가 SSOT 역할을 가진다.
+
+## 6. Product Scope and Non-Goals
+
+### 6.1 In Scope
+
+본 제품의 현재 및 근시일 목표 범위는 다음과 같다.
+
+- HeartSound 및 ECG 파일 기반 분석 workspace 제공
+- 역할별 파일 업로드 및 자동 연결
+- HeartSound 중심 chart review workflow
+- S1/S2 event structure visualization
+- S3/S4 candidate visualization
+- cycle-aware parameter review
+- wave playback과 chart synchronization
+- 연구용 export 및 비교 workflow
+- 제한적 공유와 접근 제어
+
+### 6.2 Non-Goals
+
+현재 PRD 기준에서 다음 항목은 기본 범위 밖으로 둔다.
+
+- 특정 질환의 자동 진단 또는 확진
+- 치료 권고 또는 처방 지원
+- 무인 자동 판정 시스템
+- 임상 판단을 대체하는 risk score 제공
+- 정식 의료기관 배포를 전제로 한 완성형 인증 제품 정의
+- 대규모 SaaS 운영, 과금, 다중 조직 멀티테넌시
+
+### 6.3 Scope Boundary Rule
+
+문서 안에서 `현재 제품`과 `향후 목표`를 구분하는 기본 규칙은 다음과 같다.
+
+- 현재 구현된 기능은 현재형으로 쓴다.
+- 향후 만들 기능은 `목표`, `확장`, `향후`, `planned` 표현으로 쓴다.
+- 임상 해석 지원과 규제 대응은 제품화 가능성의 방향으로만 쓴다.
+
+## 7. Core Workflows
+
+### 7.1 File Ingestion Workflow
+
+사용자는 workspace별로 파일을 업로드한다.
+
+- `data` 파일을 기본 분석 소스로 사용한다.
+- 같은 base naming rule을 따르는 `wave`, `parameter`, `unsupervised` 파일은
+  자동 연결된다.
+- HeartSound에서는 parameter를 수동 업로드하는 방식보다 `data` 기반 파생이
+  중심이다.
+
+### 7.2 Review Workflow
+
+사용자는 panel에서 다음 흐름으로 분석한다.
+
+1. data 파일 선택
+2. 자동 연결된 보조 파일 확인
+3. waveform과 overlay 검토
+4. cycle 선택 및 이동
+5. parameter panel 확인
+6. 필요 시 wave playback으로 청취 및 동기화 검토
+7. 필요 시 second panel과 비교
+
+### 7.3 Comparison Workflow
+
+- one-panel mode로 단일 데이터에 집중할 수 있어야 한다.
+- two-panel mode로 두 dataset 또는 두 조건을 나란히 비교할 수 있어야 한다.
+- 각 panel의 상태는 독립적으로 조정 가능해야 한다.
+
+### 7.4 Export Workflow
+
+- 사용자는 현재 파생된 HeartSound parameter를 xlsx로 다운로드할 수 있어야 한다.
+- export는 UI와 동일한 cycle-aware 구조를 반영해야 한다.
+- metadata가 함께 기록되어 나중에 출처를 추적할 수 있어야 한다.
+
+### 7.5 Sharing Workflow
+
+- 내부 테스트나 데모 상황에서 접근 제어를 유지할 수 있어야 한다.
+- `open` 또는 `code` 모드를 선택할 수 있어야 한다.
+- 필요 시 share URL을 생성하여 외부에서 접근할 수 있어야 한다.
+
+## 8. Functional Requirements
+
+### FR-1. Runtime and Access
+
+제품은 로컬에서 일관되게 실행, 중지, 상태 확인이 가능해야 한다.
+
+수용 기준:
+
+- `./start`로 frontend와 backend가 실행된다.
+- `./stop_dev.sh`로 실행 프로세스를 종료할 수 있다.
+- `./status_dev.sh`와 `./health_dev.sh`로 현재 상태를 확인할 수 있다.
+- 접근 모드는 `open`과 `code`를 지원한다.
+- code 모드에서는 1회용 숫자 code를 생성할 수 있다.
+
+### FR-2. Workspace and File Role Management
+
+제품은 workspace와 file role을 명확히 구분해야 한다.
+
+수용 기준:
+
+- `heartsound`와 `ecg` workspace를 지원한다.
+- `data`, `wave`, `parameter`, `unsupervised` role을 지원한다.
+- 유효하지 않은 파일 형식이나 필수 column 누락은 식별 가능해야 한다.
+- matching rule에 따라 지원 파일을 자동 연결할 수 있어야 한다.
+
+### FR-3. Panel-Based Analysis UI
+
+제품은 panel 중심 분석 경험을 제공해야 한다.
+
+수용 기준:
+
+- one-panel mode와 two-panel mode를 지원한다.
+- 각 panel은 header, chart, optional parameter 영역을 가진다.
+- panel별로 reset, detail, settings, parameter toggle을 독립 제어할 수 있다.
+
+### FR-4. HeartSound Event Visualization
+
+제품은 HeartSound signal의 핵심 이벤트 구조를 시각적으로 검토할 수 있어야 한다.
+
+수용 기준:
+
+- amplitude waveform을 표시한다.
+- RS score overlay를 표시할 수 있다.
+- S1 area와 S2 area를 표시할 수 있다.
+- S3/S4 candidate overlay를 표시할 수 있다.
+- selected cycle 및 parameter measurement annotation을 표시할 수 있다.
+
+### FR-5. Candidate Event Review
+
+제품은 S3/S4를 확정 이벤트가 아니라 review-oriented candidate로 다뤄야 한다.
+
+수용 기준:
+
+- S3/S4는 candidate overlay로 분리 표현된다.
+- candidate visibility를 사용자가 on/off 할 수 있다.
+- candidate logic은 cycle 구조와 amplitude 기반 review 흐름에 연결된다.
+- PRD 기준으로도 candidate를 진단 확정 이벤트로 표현하지 않는다.
+
+### FR-6. Wave Playback and Synchronization
+
+제품은 signal review와 audio review를 연결해야 한다.
+
+수용 기준:
+
+- linked wave가 panel header에 표시된다.
+- play/pause, -5s, +5s, reset, slow-speed cycle을 지원한다.
+- playback 위치가 chart playhead에 반영된다.
+- playhead drag를 통한 seek를 지원한다.
+- playback과 graph viewport가 필요한 범위에서 함께 이동한다.
+
+### FR-7. Parameter Review Experience
+
+제품은 cycle-aware parameter review를 제공해야 한다.
+
+수용 기준:
+
+- parameter panel을 표시/숨김할 수 있다.
+- cycle selector와 highlight control을 제공한다.
+- HeartSound parameter category를 구조적으로 표시한다.
+- parameter card 클릭 시 graph measurement annotation과 연결된다.
+- HR은 별도의 강조 card로 표시된다.
+
+### FR-8. Derived Parameter Computation
+
+HeartSound parameter는 `data` 파일로부터 일관되게 파생되어야 한다.
+
+수용 기준:
+
+- S1, S2, S1-S2 relation, RS score, HR family를 계산한다.
+- invalid cycle은 명시적 validity rule에 따라 제외 또는 `NaN` 처리된다.
+- formula 및 unit은 별도 reference 문서와 일치해야 한다.
+
+### FR-9. Export and Documentation Support
+
+제품은 연구 검토 결과를 외부로 가져갈 수 있어야 한다.
+
+수용 기준:
+
+- parameter xlsx export를 지원한다.
+- export에는 parameter row와 metadata가 포함된다.
+- documentation layer가 current implementation, PRD, formula reference로 구분된다.
+
+### FR-10. Sharing and Controlled Access
+
+제품은 간단한 내부 공유 또는 데모 공유를 지원해야 한다.
+
+수용 기준:
+
+- public share URL을 생성할 수 있다.
+- share URL은 재사용 가능 상태를 확인할 수 있다.
+- clipboard copy 같은 운영 편의가 제공된다.
+- 이 공유 기능은 현재 로컬 기반 임시 공유 모델로 정의한다.
+
+## 9. Data and Analysis Requirements
+
+### 9.1 Supported Data Structure
+
+HeartSound `data` 파일은 최소한 다음 축을 포함해야 한다.
+
+- 시간 인덱스
+- amplitude
+- S1/S2 관련 RS-score channel
+
+Wave는 `.wav` 형식이어야 하며, unsupervised 데이터는 cycle boundary와 cluster
+정보를 포함해야 한다.
+
+### 9.2 Cycle Definition Rule
+
+HeartSound의 핵심 분석 단위는 valid cycle이다.
+
+valid cycle은 다음 관계를 만족해야 한다.
 
 - `S1_start < S1_end < S2_start < S2_end < next_S1_start`
 
-Cycle의 시작점:
+이 정의는 chart highlight, parameter extraction, export, navigation의 공통 기준이 된다.
 
-- `S1_start`
+### 9.3 Event Interpretation Rule
 
-Cycle의 끝점:
+- S1/S2는 primary event structure로 다룬다.
+- S3/S4는 exploratory candidate로 다룬다.
+- parameter는 stable cycle anchor에 근거해 계산한다.
 
-- `next_S1_start`
+### 9.4 Source of Truth Rule
 
-### 1.4 Validity 정책
+- 현재 구현 동작은 `process/current_implementation_spec.md`
+- parameter formula는 `process/heartsound_parameter_formula_reference.md`
+- 규제 표현 원칙은 `ideas/12_prd_regulatory_and_approval_guide.md`
 
-필수 boundary가 잘못되었거나 누락된 경우:
+## 10. UX and Usability Requirements
 
-- 해당 parameter는 `NaN`으로 저장된다.
-- 강제로 `0`으로 바꾸지 않는다.
+제품은 연구 검토 상황에서 빠르게 읽히는 구조를 가져야 한다.
 
-### 1.5 Interval convention
+핵심 UX 요구사항은 다음과 같다.
 
-모든 segment 계산은 half-open interval을 사용한다.
+- 파일 연결 상태를 panel header에서 즉시 이해할 수 있어야 한다.
+- chart와 parameter panel 사이를 자주 오갈 필요가 없어야 한다.
+- cycle 이동과 graph viewport 이동이 자연스럽게 이어져야 한다.
+- overlay visibility를 사용자가 부담 없이 조절할 수 있어야 한다.
+- S3/S4 candidate와 S1/S2 primary structure가 시각적으로 혼동되지 않아야 한다.
+- tooltip은 짧고 해석 중심이어야 한다.
 
-- `x[start:end)`
+향후 제품화 단계에서 추가로 중요해질 항목은 다음과 같다.
 
-## 2. UI Mapping
+- 오사용 가능성 감소
+- candidate와 confirmed structure의 혼동 방지
+- 의료전문가와 연구자 모두 이해 가능한 labeling
+- 사용적합성 검토가 가능한 interaction 구조
 
-### 2.1 `S1`
+## 11. Non-Functional Requirements
 
-`S1` section은 S1 segment만으로 계산된 parameter를 보여준다.
+### 11.1 Local-First Operability
 
-- `S1_Duration`
-- `S1_Peak`
-- `S1_Mean`
-- `S1_RMS`
-- `S1_Area`
-- `S1_Middle`
-- `S1_StartCentroid`
-- `S1_EndCentroid`
+- 제품은 로컬 환경에서 안정적으로 실행 가능해야 한다.
+- launcher 기반 start/stop/status flow가 유지되어야 한다.
 
-### 2.2 `S2`
+### 11.2 Performance and Responsiveness
 
-`S2` section은 S2 segment에 대해 S1과 동일한 metric family를 보여준다.
+- 일반적인 review 동작에서 chart interaction이 과도하게 끊기지 않아야 한다.
+- cycle 이동과 parameter refresh는 연구 검토 흐름을 방해하지 않아야 한다.
+- wave playback 중 playhead와 viewport 동기화가 사용 가능한 수준으로 유지되어야 한다.
 
-- `S2_Duration`
-- `S2_Peak`
-- `S2_Mean`
-- `S2_RMS`
-- `S2_Area`
-- `S2_Middle`
-- `S2_StartCentroid`
-- `S2_EndCentroid`
+### 11.3 Persistence and Traceability
 
-### 2.3 `S1-S2`
+- 업로드 파일과 metadata는 추적 가능해야 한다.
+- export는 source file context를 기록해야 한다.
+- 문서화는 current implementation, product intent, formula reference로 분리되어야 한다.
 
-`S1-S2` section은 거리 및 관계 timing을 보여준다.
+### 11.4 Safety of Interpretation
 
-- `S1Start_to_S2Start`
-- `S1End_to_S2Start`
-- `S1Middle_to_S2Middle`
-- `S1End_to_S2End`
-- `S1Start_to_S2End`
-- `S1Peak_to_S2Peak`
+- S3/S4는 candidate로 표현되어야 한다.
+- 현재 제품은 질환 확진 도구처럼 읽히지 않아야 한다.
+- parameter와 overlay는 해석 보조 수단으로 제시되어야 한다.
 
-### 2.4 `RS Score`
+## 12. Regulatory and Approval Direction
 
-`RS Score` section은 event 기반 3개 family를 묶어서 보여준다.
+본 제품은 현재 연구실 내부 검증 단계의 심음 및 ECG 분석 소프트웨어로 정의한다.
+현 단계의 목적은 signal structure 검토, 이벤트 검출 구조 정리, 파라미터 산출,
+visual review workflow 고도화에 있으며, 질병의 진단, 확진, 치료 판단을 직접
+표방하지 않는다.
 
-- `RS Peak`
-- `RS Width`
-- `RS STD`
+다만 향후 제품화 버전이 다음 기능과 연결될 경우 규제 성격이 달라질 수 있다.
 
-대상 event는 다음 네 가지이다.
+- AI 기반 S1/S2 자동 검출
+- S3/S4 후보 이벤트 분석
+- 이벤트별 파라미터 분석 결과의 임상적 해석 지원
+- 사용자 상태의 이상 여부, 스크리닝, 위험도 판단과의 연결
 
-- `S1 start`
-- `S1 end`
-- `S2 start`
-- `S2 end`
+따라서 본 제품은 현재 연구용 프로토타입으로 출발하되, 상용화 단계에서는
+독립형 디지털의료기기소프트웨어에 해당할 가능성을 전제로 MFDS 인허가 전략을
+검토한다. 최종 규제 경로와 등급은 사용목적 문구, 기능 범위, 의료적 영향,
+식약처 제품코드 및 등급 분류 판단을 거쳐 확정한다.
 
-## 3. 공통 Landmark 정의
+규제 관점의 작성 원칙은 다음과 같다.
 
-선택된 각 cycle에 대해:
+- 현재 단계와 향후 허가 대상 단계를 구분해 쓴다.
+- 진단 확정 표현보다 이벤트 검출 및 해석 지원 중심으로 쓴다.
+- 의료기관 사용, 스크리닝, 위험도 제시 표현은 더 높은 규제 부담을 동반할 수 있으므로 신중히 다룬다.
+- 데이터셋 이력, 모델 검증, 알고리즘 역할 분리, 사용적합성, 변경관리를 미리 준비한다.
 
-- `s1s = S1_start`
-- `s1e = S1_end`
-- `s2s = S2_start`
-- `s2e = S2_end`
-- `s1n = next_S1_start`
+세부 작성 원칙은 `ideas/12_prd_regulatory_and_approval_guide.md`를 따른다.
 
-Segment 정의:
+## 13. Success Metrics
 
-- `seg_S1 = x[s1s:s1e]`
-- `seg_S2 = x[s2s:s2e]`
+현재 단계에서의 성공은 연구용 review workflow가 실제로 빨라지고 일관되어지는지로 판단한다.
 
-Midpoint 정의:
+핵심 제품 지표 예시는 다음과 같다.
 
-- `mid_S1 = (s1s + s1e) / 2`
-- `mid_S2 = (s2s + s2e) / 2`
+- 사용자가 data 파일 업로드 후 연결 상태를 빠르게 확인할 수 있는가
+- cycle 선택과 parameter 해석 흐름이 끊기지 않는가
+- wave playback과 chart review가 자연스럽게 연결되는가
+- S1/S2 구조와 candidate event를 빠르게 비교할 수 있는가
+- export 결과가 재검토에 충분한 구조를 가지는가
 
-Absolute peak index 정의:
+향후 정량화 가능한 KPI 후보는 다음과 같다.
 
-- `peak_S1 = argmax(abs(seg_S1)) + s1s`
-- `peak_S2 = argmax(abs(seg_S2)) + s2s`
+- 파일 업로드 후 분석 시작까지의 평균 시간
+- cycle 간 이동 및 parameter 확인에 필요한 평균 시간
+- review session 중 panel reset 또는 visibility toggle의 사용 효율
+- export 후 외부 분석 재사용률
+- 버전별 event detection 정확도 및 consistency
 
-Sample-to-time 변환:
+## 14. Roadmap
 
-- `samples_to_ms(n) = n * 0.25`
+### Phase 1. Research Workflow Stabilization
 
-## 4. `S1` Parameter Formula
+목표:
 
-### 4.1 `S1_Duration`
+- 현재 HeartSound 중심 workflow를 안정화한다.
+- S1/S2 structure review, S3/S4 candidate review, parameter panel, export 흐름을
+  일관되게 다듬는다.
+- 현재 구현 문서와 formula 문서를 제품 문서와 정렬한다.
 
-의미:
+### Phase 2. Analysis Quality Expansion
 
-- S1 segment의 duration
+목표:
 
-Formula:
+- 이벤트 검출 품질과 parameter 체계를 더 명확히 정리한다.
+- candidate event 로직과 설명 가능성을 높인다.
+- dataset 검증 기록과 버전별 성능 비교 체계를 강화한다.
 
-- `(s1e - s1s) * 0.25`
+### Phase 3. Productization Preparation
 
-Unit:
+목표:
 
-- `ms`
+- intended use 문구를 관리한다.
+- 사용자 권한, 공유 구조, 보안, 문서화, 변경관리를 강화한다.
+- 의료전문가 해석 지원 제품으로의 확장 가능성을 검토한다.
+- MFDS 인허가 준비 범위를 단계적으로 정리한다.
 
-### 4.2 `S1_Peak`
+## 15. Open Questions
 
-의미:
+현재 PRD 기준의 핵심 open question은 다음과 같다.
 
-- S1 내부의 최대 absolute amplitude
+- ECG workflow를 HeartSound와 같은 수준으로 확장할 것인지
+- AI 기반 S1/S2 검출을 실제 제품 핵심 value proposition으로 둘 것인지
+- S3/S4를 candidate layer로 유지할지, 더 구조화된 feature family로 승격할지
+- 연구용 product line과 향후 제품화 버전을 별도 문서로 나눌지
+- 공유 기능을 단순 데모 도구로 유지할지, 정식 사용자 접근 구조로 확장할지
 
-Formula:
+## 16. Summary
 
-- `max(abs(seg_S1))`
+HeartSound Analysis Tool의 현재 제품 정체성은 연구용 HeartSound/ECG 분석 workspace이다.
+핵심은 signal, audio, cycle, parameter를 하나의 review flow로 묶는 데 있다.
 
-Unit:
+이 PRD는 다음 원칙을 유지한다.
 
-- `mV`
+- 현재 구현과 목표 기능을 구분한다.
+- HeartSound 중심 workflow를 제품의 핵심으로 둔다.
+- candidate event와 parameter 해석을 review-oriented 구조로 정의한다.
+- 향후 제품화 가능성을 열어두되, 현 단계에서는 연구용 도구라는 포지션을 유지한다.
 
-### 4.3 `S1_Mean`
-
-의미:
-
-- S1 내부의 mean absolute amplitude
-
-Formula:
-
-- `mean(abs(seg_S1))`
-
-Unit:
-
-- `mV`
-
-### 4.4 `S1_RMS`
-
-의미:
-
-- S1 내부의 RMS amplitude
-
-Formula:
-
-- `sqrt(mean(seg_S1^2))`
-
-Unit:
-
-- `mV`
-
-### 4.5 `S1_Area`
-
-의미:
-
-- 시간에 대해 적분된 S1의 absolute signal area
-
-Formula:
-
-- `sum(abs(seg_S1)) * 0.25`
-
-Unit:
-
-- `mV*ms`
-
-### 4.6 `S1_Middle`
-
-의미:
-
-- S1 segment의 midpoint time
-
-Formula:
-
-- `((s1s + s1e) / 2) * 0.25`
-
-Unit:
-
-- `ms`
-
-### 4.7 `S1_StartCentroid`
-
-의미:
-
-- weighted energy center가 S1의 시작 절반 쪽으로 얼마나 치우쳐 있는지
-
-중간 정의:
-
-- `centroid_S1 = sum(n * abs(x[n])) / sum(abs(x[n]))` for `n in [s1s, s1e)`
-
-Formula:
-
-- `max(0, (mid_S1 - centroid_S1) / (mid_S1 - s1s)) * 100`
-
-Unit:
-
-- `%`
-
-### 4.8 `S1_EndCentroid`
-
-의미:
-
-- weighted energy center가 S1의 끝 절반 쪽으로 얼마나 치우쳐 있는지
-
-Formula:
-
-- `max(0, (centroid_S1 - mid_S1) / (s1e - mid_S1)) * 100`
-
-Unit:
-
-- `%`
-
-## 5. `S2` Parameter Formula
-
-`S2` formula는 `S1` formula와 동일한 구조를 가지며, S2 segment를 사용한다.
-
-### 5.1 `S2_Duration`
-
-Formula:
-
-- `(s2e - s2s) * 0.25`
-
-Unit:
-
-- `ms`
-
-### 5.2 `S2_Peak`
-
-Formula:
-
-- `max(abs(seg_S2))`
-
-Unit:
-
-- `mV`
-
-### 5.3 `S2_Mean`
-
-Formula:
-
-- `mean(abs(seg_S2))`
-
-Unit:
-
-- `mV`
-
-### 5.4 `S2_RMS`
-
-Formula:
-
-- `sqrt(mean(seg_S2^2))`
-
-Unit:
-
-- `mV`
-
-### 5.5 `S2_Area`
-
-Formula:
-
-- `sum(abs(seg_S2)) * 0.25`
-
-Unit:
-
-- `mV*ms`
-
-### 5.6 `S2_Middle`
-
-Formula:
-
-- `((s2s + s2e) / 2) * 0.25`
-
-Unit:
-
-- `ms`
-
-### 5.7 `S2_StartCentroid`
-
-Formula:
-
-- `max(0, (mid_S2 - centroid_S2) / (mid_S2 - s2s)) * 100`
-
-Unit:
-
-- `%`
-
-### 5.8 `S2_EndCentroid`
-
-Formula:
-
-- `max(0, (centroid_S2 - mid_S2) / (s2e - mid_S2)) * 100`
-
-Unit:
-
-- `%`
-
-## 6. `S1-S2` Relation Formula
-
-이 metric들은 S1과 S2 landmark 사이의 거리를 설명한다.
-
-### 6.1 `S1Start_to_S2Start`
-
-의미:
-
-- S1 start부터 S2 start까지의 거리
-
-Formula:
-
-- `(s2s - s1s) * 0.25`
-
-Unit:
-
-- `ms`
-
-### 6.2 `S1End_to_S2Start`
-
-의미:
-
-- S1 end부터 S2 start까지의 거리
-
-Formula:
-
-- `(s2s - s1e) * 0.25`
-
-Unit:
-
-- `ms`
-
-### 6.3 `S1Middle_to_S2Middle`
-
-의미:
-
-- S1 midpoint부터 S2 midpoint까지의 거리
-
-Formula:
-
-- `(mid_S2 - mid_S1) * 0.25`
-
-Unit:
-
-- `ms`
-
-### 6.4 `S1End_to_S2End`
-
-의미:
-
-- S1 end부터 S2 end까지의 거리
-
-Formula:
-
-- `(s2e - s1e) * 0.25`
-
-Unit:
-
-- `ms`
-
-### 6.5 `S1Start_to_S2End`
-
-의미:
-
-- S1 start부터 S2 end까지의 전체 거리
-
-Formula:
-
-- `(s2e - s1s) * 0.25`
-
-Unit:
-
-- `ms`
-
-### 6.6 `S1Peak_to_S2Peak`
-
-의미:
-
-- S1 내부의 가장 강한 absolute peak와 S2 내부의 가장 강한 absolute peak 사이의 거리
-
-Formula:
-
-- `(peak_S2 - peak_S1) * 0.25`
-
-Unit:
-
-- `ms`
-
-## 7. `HR` Formula
-
-### 7.1 `HeartRate_bpm`
-
-의미:
-
-- 현재 cycle 길이로부터 추정한 heart rate
-
-Formula:
-
-- `cycle_length_ms = (s1n - s1s) * 0.25`
-- `HR = 60000 / cycle_length_ms`
-
-Unit:
-
-- `bpm`
-
-Note:
-
-- `next_S1_start`가 없거나 invalid이면 `HR`은 `NaN`이 된다.
-
-## 8. `RS Score` Parameter Formula
-
-`RS Score` section은 S1/S2 boundary detection에 이미 사용되는 RS-score channel로부터 계산되는 event-based parameter를 포함한다.
-
-Source RS signal:
-
-- `rs_s1_start = S1-Start_RS_Score`
-- `rs_s1_end = S1-End_RS_Score`
-- `rs_s2_start = S2-Start_RS_Score`
-- `rs_s2_end = S2-End_RS_Score`
-
-Representative event index는 최종 선택된 area peak에서 가져온다.
-
-- `tau_s1s = selected S1 start peak index`
-- `tau_s1e = selected S1 end peak index`
-- `tau_s2s = selected S2 start peak index`
-- `tau_s2e = selected S2 end peak index`
-
-### 8.1 `RS Peak` family
-
-의미:
-
-- 선택된 event peak index에서의 raw RS-score value
-
-#### 8.1.1 `S1Start_RS_Peak`
-
-Formula:
-
-- `rs_s1_start[tau_s1s]`
-
-#### 8.1.2 `S1End_RS_Peak`
-
-Formula:
-
-- `rs_s1_end[tau_s1e]`
-
-#### 8.1.3 `S2Start_RS_Peak`
-
-Formula:
-
-- `rs_s2_start[tau_s2s]`
-
-#### 8.1.4 `S2End_RS_Peak`
-
-Formula:
-
-- `rs_s2_end[tau_s2e]`
-
-Unit:
-
-- raw RS-score scale
-
-### 8.2 `RS Width` family
-
-의미:
-
-- 선택된 event peak 주변에서 RS score가 peak value의 50% 이상으로 유지되는 contiguous region의 width
-
-일반 절차:
-
-1. `peak_val = RS(tau)`
-2. `threshold = 0.5 * peak_val`
-3. RS score가 `>= threshold`인 동안 왼쪽으로 이동
-4. RS score가 `>= threshold`인 동안 오른쪽으로 이동
-5. 두 경계 사이의 거리를 width로 계산
-
-일반 formula:
-
-- `width_ms = (right_index - left_index) * 0.25`
-
-해당 metric:
-
-- `S1Start_RS_Width`
-- `S1End_RS_Width`
-- `S2Start_RS_Width`
-- `S2End_RS_Width`
-
-Unit:
-
-- `ms`
-
-### 8.3 `RS STD` family
-
-의미:
-
-- 선택된 RS event peak 주변의 weighted temporal spread
-
-현재 local window:
-
-- `tau - 80`부터 `tau + 80`
-- 즉 `+-20 ms`
-
-일반 절차:
-
-1. event peak 주변의 local RS-score window 추출
-2. RS value를 weight로 사용
-3. weighted mean index 계산
-4. index 공간에서 weighted variance 계산
-5. standard deviation을 sample에서 ms로 변환
-
-Weighted mean:
-
-- `mu = sum(t * RS(t)) / sum(RS(t))`
-
-Weighted variance:
-
-- `var = sum((t - mu)^2 * RS(t)) / sum(RS(t))`
-
-최종 formula:
-
-- `std_ms = sqrt(var) * 0.25`
-
-해당 metric:
-
-- `S1Start_RS_STD`
-- `S1End_RS_STD`
-- `S2Start_RS_STD`
-- `S2End_RS_STD`
-
-Unit:
-
-- `ms`
-
-## 9. 각 Part가 사용자에게 의미하는 것
-
-### 9.1 `S1`
-
-이 part는 다음을 알려준다.
-
-- S1이 얼마나 긴지
-- S1이 얼마나 강한지
-- S1이 얼마나 많은 energy를 가지는지
-- S1 energy가 start-heavy인지 end-heavy인지
-
-### 9.2 `S2`
-
-이 part는 다음을 알려준다.
-
-- S2가 얼마나 긴지
-- S2가 얼마나 강한지
-- S2가 얼마나 많은 energy를 가지는지
-- S2 energy가 start-heavy인지 end-heavy인지
-
-### 9.3 `S1-S2`
-
-이 part는 다음을 알려준다.
-
-- S1과 S2 landmark가 얼마나 떨어져 있는지
-- systolic timing이 두 sound 사이에 어떻게 분포하는지
-- midpoint 기반 timing과 peak 기반 timing이 어떻게 다른지
-
-### 9.4 `RS Score`
-
-이 part는 다음을 알려준다.
-
-- 선택된 RS event peak가 얼마나 강한지
-- half-height 기준으로 RS event가 얼마나 넓은지
-- RS event가 시간적으로 얼마나 집중되어 있는지 혹은 퍼져 있는지
-
-### 9.5 `HR`
-
-이 part는 다음을 알려준다.
-
-- 현재 cycle이 한 S1 start에서 다음 S1 start까지 얼마나 긴지
-- 그로부터 계산된 beats-per-minute 값
-
-## 10. Graph Annotation Mapping
-
-UI에서 parameter를 클릭하면, graph에는 해당 parameter가 어디서 계산되었는지가 표시된다.
-
-현재 mapping:
-
-- `S1` metric -> S1 range
-- `S2` metric -> S2 range
-- `S1-S2` metric -> 해당 S1/S2 landmark 사이 interval
-- `HR` -> 현재 cycle부터 다음 cycle까지
-- `RS Peak` -> event point
-- `RS Width` -> half-height contiguous width region
-- `RS STD` -> local `+-20 ms` RS window
-
-## 11. Notes
-
-- 이 문서의 모든 formula는 `backend/app/services/plot_data_service.py`의 현재 구현을 반영한다.
-- UI grouping은 `frontend/src/App.tsx`의 현재 구현을 반영한다.
-- 이 문서는 현재 배포된 formula set만 설명한다.
-- `ideas/Parameter.py`에 있는 미래 parameter 아이디어는, 이미 구현된 것이 아니라면 여기 포함하지 않는다.
+이 문서를 기준으로 이후 기능 추가, UI 정리, 검증 계획, 규제 문구 정리는
+동일한 방향에서 이어져야 한다.

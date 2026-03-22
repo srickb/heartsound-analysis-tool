@@ -94,6 +94,12 @@ HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS = [
 HEARTSOUND_HEART_RATE_COLUMNS = [
     "HeartRate_bpm",
 ]
+LABELING_EXPORT_COLUMN_BY_KEY: dict[str, str] = {
+    "q": "Q_Label",
+    "w": "W_Label",
+    "e": "E_Label",
+    "r": "R_Label",
+}
 HEARTSOUND_DERIVED_GROUP_METADATA: dict[str, dict[str, str]] = {
     "s1_parameters": {
         "label": "S1",
@@ -1024,6 +1030,66 @@ def build_parameter_export_workbook(file_id: str) -> tuple[BytesIO, str]:
     original_name = str(metadata.get("originalName") or file_id)
     export_stem = Path(original_name).stem or file_id
     export_filename = f"{export_stem}_parameters.xlsx"
+    return workbook_stream, export_filename
+
+
+def build_labeling_export_workbook(
+    file_id: str,
+    markers: list[dict[str, Any]],
+) -> tuple[BytesIO, str]:
+    metadata = get_file_metadata(file_id)
+    if metadata is None:
+        raise PlotDataNotFoundError("file metadata not found")
+
+    workspace_kind = str(metadata.get("workspaceKind") or "heartsound")
+    file_role = str(metadata.get("fileRole") or "data")
+    if file_role != "data":
+        raise PlotDataValidationError("label export is only available for data files")
+
+    stored_name = str(metadata["storedName"])
+    extension = str(metadata["extension"]).lower()
+    dataframe = _load_dataframe(file_id, stored_name, extension, workspace_kind, file_role).copy()
+
+    for column_name in LABELING_EXPORT_COLUMN_BY_KEY.values():
+        dataframe[column_name] = 0
+
+    row_count = len(dataframe.index)
+    label_counts = {key: 0 for key in LABELING_EXPORT_COLUMN_BY_KEY}
+    for marker in markers:
+        try:
+            key_tag = str(marker.get("keyTag") or "").lower()
+            index = int(marker.get("index"))
+        except Exception:
+            continue
+        column_name = LABELING_EXPORT_COLUMN_BY_KEY.get(key_tag)
+        if column_name is None or index < 0 or index >= row_count:
+            continue
+        if int(dataframe.at[index, column_name]) != 1:
+            label_counts[key_tag] += 1
+        dataframe.at[index, column_name] = 1
+
+    workbook_stream = BytesIO()
+    with pd.ExcelWriter(workbook_stream, engine="openpyxl") as writer:
+        dataframe.to_excel(writer, index=False, sheet_name="Labeling")
+        metadata_frame = pd.DataFrame(
+            [
+                {"Field": "file_id", "Value": file_id},
+                {"Field": "original_name", "Value": str(metadata.get("originalName") or file_id)},
+                {"Field": "workspace_kind", "Value": workspace_kind},
+                {"Field": "file_role", "Value": file_role},
+                {"Field": "row_count", "Value": row_count},
+                {"Field": "q_labels", "Value": label_counts["q"]},
+                {"Field": "w_labels", "Value": label_counts["w"]},
+                {"Field": "e_labels", "Value": label_counts["e"]},
+                {"Field": "r_labels", "Value": label_counts["r"]},
+            ]
+        )
+        metadata_frame.to_excel(writer, index=False, sheet_name="Metadata")
+
+    workbook_stream.seek(0)
+    original_name = str(metadata.get("originalName") or file_id)
+    export_stem = Path(original_name).stem or file_id
+    export_filename = f"{export_stem}_labels.xlsx"
     return workbook_stream, export_filename
 
 

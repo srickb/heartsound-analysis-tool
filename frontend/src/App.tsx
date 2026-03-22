@@ -9,7 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent
 } from "react";
-import type { EChartsOption } from "echarts";
+import type { EChartsOption, SeriesOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 
 type SplitMode = 1 | 2 | 4;
@@ -36,6 +36,7 @@ type SeriesKey =
   | "pointPs";
 type AccessMode = "open" | "code";
 type WorkspaceKind = "heartsound" | "ecg";
+type ViewMode = "analysis" | "labeling";
 type PanelLinkedFileRole = Extract<FileRole, "parameter" | "unsupervised" | "wave">;
 
 interface VisibleSeries {
@@ -92,6 +93,15 @@ interface PanelState {
   rangeEnd: number;
   visibleSeries: VisibleSeries;
   styleOptions: PanelStyleOptions;
+  chartNoteMarkers: ChartNoteMarker[];
+}
+
+type ChartNoteMarkerKey = "q" | "w" | "e" | "r";
+
+interface ChartNoteMarker {
+  id: string;
+  index: number;
+  keyTag: ChartNoteMarkerKey;
 }
 
 interface UploadedFileMetadata {
@@ -297,7 +307,14 @@ interface PanelCardProps {
   onSelectCycle: (panelId: PanelId, cycleIndex: number) => void;
   onSelectParameterMetric: (panelId: PanelId, metricKey: string) => void;
   onDownloadParameterExport: (panelId: PanelId) => void;
+  onDownloadLabelingExport: (panelId: PanelId) => void;
+  onClearLabelingMarkers: (panelId: PanelId) => void;
+  onSelectLabelingAnchor: (panelId: PanelId, index: number) => void;
+  onAddLabelingMarker: (panelId: PanelId, index: number, keyTag: ChartNoteMarkerKey) => void;
+  isLabelingMode: boolean;
+  labelingAnchorIndex: number | null;
   isParameterExporting: boolean;
+  isLabelingExporting: boolean;
 }
 
 type DataPair = [number, number];
@@ -378,6 +395,13 @@ const HEARTSOUND_SERIES_ITEMS: SeriesDescriptor[] = [
   { key: "s2Start", label: "S2-Start_RS_Score", color: "#db6d28" },
   { key: "s2End", label: "S2-End_RS_Score", color: "#f85149" }
 ];
+
+const CHART_NOTE_MARKER_STYLES: Record<ChartNoteMarkerKey, { label: string; color: string }> = {
+  q: { label: "Q", color: "#ff4d6d" },
+  w: { label: "W", color: "#ff9f1c" },
+  e: { label: "E", color: "#00d1ff" },
+  r: { label: "R", color: "#a855f7" }
+};
 
 const ECG_SERIES_COLORS = {
   amplitude: "#79c0ff",
@@ -476,7 +500,8 @@ const createDefaultPanelState = (panelId: PanelId, workspaceKind?: WorkspaceKind
   rangeStart: 0,
   rangeEnd: 0,
   visibleSeries: { ...DEFAULT_VISIBLE_SERIES },
-  styleOptions: { ...DEFAULT_STYLE_OPTIONS }
+  styleOptions: { ...DEFAULT_STYLE_OPTIONS },
+  chartNoteMarkers: []
 });
 
 const createEmptyPlotState = (): PanelPlotState => ({
@@ -1596,6 +1621,109 @@ const getRsWidthBounds = (lookup: Map<number, number>, peakIndex: number | null 
   return left <= right ? [left, right] : null;
 };
 
+const buildChartNoteMarkerSeries = (
+  markers: ChartNoteMarker[],
+  amplitudePairs: DataPair[]
+): SeriesOption | null => {
+  if (markers.length === 0 || amplitudePairs.length === 0) {
+    return null;
+  }
+
+  const amplitudeValues = amplitudePairs.map((pair) => pair[1]);
+  const amplitudeMin = Math.min(...amplitudeValues);
+  const amplitudeMax = Math.max(...amplitudeValues);
+  const amplitudeSpan = Math.max(amplitudeMax - amplitudeMin, 1);
+  const noteMarkerLow = amplitudeMin - amplitudeSpan * 0.04;
+  const noteMarkerHigh = amplitudeMax + amplitudeSpan * 0.04;
+
+  return {
+    name: "Chart Notes",
+    type: "custom",
+    xAxisIndex: 0,
+    yAxisIndex: 0,
+    silent: true,
+    clip: true,
+    animation: false,
+    encode: {
+      x: 0,
+      y: [1, 2],
+      tooltip: []
+    },
+    data: markers.map((marker) => {
+      const markerStyle = CHART_NOTE_MARKER_STYLES[marker.keyTag];
+      return [
+        marker.index,
+        noteMarkerLow,
+        noteMarkerHigh,
+        markerStyle.label,
+        markerStyle.color,
+      ];
+    }),
+    renderItem(
+      _params: unknown,
+      api: {
+        value: (dimension: number) => unknown;
+        coord: (value: [number, number]) => number[];
+      }
+    ) {
+      const xValue = Number(api.value(0));
+      const lowValue = Number(api.value(1));
+      const highValue = Number(api.value(2));
+      const label = String(api.value(3) ?? "");
+      const color = String(api.value(4) ?? "#ff4d6d");
+      const topPoint = api.coord([xValue, highValue]);
+      const bottomPoint = api.coord([xValue, lowValue]);
+
+      return {
+        type: "group",
+        children: [
+          {
+            type: "line",
+            shape: {
+              x1: topPoint[0],
+              y1: topPoint[1],
+              x2: bottomPoint[0],
+              y2: bottomPoint[1],
+            },
+            style: {
+              stroke: color,
+              lineWidth: 2.2,
+              opacity: 0.98,
+            },
+          },
+          {
+            type: "rect",
+            shape: {
+              x: topPoint[0] - 9,
+              y: topPoint[1] + 4,
+              width: 18,
+              height: 14,
+              r: 4,
+            },
+            style: {
+              fill: color,
+              opacity: 0.98,
+            },
+          },
+          {
+            type: "text",
+            style: {
+              x: topPoint[0],
+              y: topPoint[1] + 11,
+              text: label,
+              fill: "#ffffff",
+              font: "700 10px sans-serif",
+              textAlign: "center",
+              textVerticalAlign: "middle",
+            },
+          },
+        ],
+      };
+    },
+    z: 9,
+  };
+};
+
 const getHeartsoundParameterTooltipContent = (
   metricKey: string,
   metricLabel: string
@@ -2191,7 +2319,14 @@ const PanelCard = memo(function PanelCard({
   onSelectCycle,
   onSelectParameterMetric,
   onDownloadParameterExport,
-  isParameterExporting
+  onDownloadLabelingExport,
+  onClearLabelingMarkers,
+  onSelectLabelingAnchor,
+  onAddLabelingMarker,
+  isLabelingMode,
+  labelingAnchorIndex,
+  isParameterExporting,
+  isLabelingExporting
 }: PanelCardProps) {
   const sliderDebounceRef = useRef<number | null>(null);
 
@@ -2205,7 +2340,7 @@ const PanelCard = memo(function PanelCard({
 
   const activePlot = plotState.current ?? plotState.overview;
   const overviewPlot = plotState.overview ?? activePlot;
-  const showParameterSection = panel.showParameterSummary;
+  const showParameterSection = !isLabelingMode && panel.showParameterSummary;
   const parameterSourceFileId = getParameterSourceFileId(panel);
   const parameterSourceName = getParameterSourceName(panel);
   const rangeGuide = useMemo(() => {
@@ -2666,6 +2801,52 @@ const PanelCard = memo(function PanelCard({
     waveMarkerIndex
   ]);
 
+  useEffect(() => {
+    if (!isLabelingMode || !panel.fileId || panel.totalRows === null || panel.totalRows <= 0) {
+      return undefined;
+    }
+
+    const instance = chartRef.current?.getEchartsInstance();
+    const zr = instance?.getZr();
+    if (!instance || !zr) {
+      return undefined;
+    }
+
+    const handleZrClick = (event: { offsetX?: number; offsetY?: number }) => {
+      const offsetX = event.offsetX;
+      const offsetY = event.offsetY;
+      if (
+        typeof offsetX !== "number" ||
+        !Number.isFinite(offsetX) ||
+        typeof offsetY !== "number" ||
+        !Number.isFinite(offsetY)
+      ) {
+        return;
+      }
+
+      try {
+        if (!instance.containPixel({ gridIndex: 0 }, [offsetX, offsetY])) {
+          return;
+        }
+
+        const axisValue = instance.convertFromPixel({ xAxisIndex: 0 }, offsetX);
+        if (typeof axisValue !== "number" || !Number.isFinite(axisValue)) {
+          return;
+        }
+
+        const maxIndex = Math.max((panel.totalRows ?? 0) - 1, 0);
+        onSelectLabelingAnchor(panel.panelId, clampNumber(Math.round(axisValue), 0, maxIndex));
+      } catch {
+        // Ignore conversion errors during transient chart reflows.
+      }
+    };
+
+    zr.on("click", handleZrClick);
+    return () => {
+      zr.off("click", handleZrClick);
+    };
+  }, [isLabelingMode, onSelectLabelingAnchor, panel.fileId, panel.panelId, panel.totalRows, panel.rangeEnd, panel.rangeStart]);
+
   const updateWavePlaybackFromMarker = useCallback(
     (nextMarkerIndex: number, shouldSyncViewport = true) => {
       const totalRows = panel.totalRows ?? activePlot?.originalRowCount ?? 0;
@@ -2979,6 +3160,10 @@ const PanelCard = memo(function PanelCard({
     const pointQrssPairs = toDataPairs(activePlot.x, activePlot.pointQrss);
     const pointQrsePairs = toDataPairs(activePlot.x, activePlot.pointQrse);
     const pointTsPairs = toDataPairs(activePlot.x, activePlot.pointTs);
+    const amplitudeValues = amplitudePairs.map((pair) => pair[1]);
+    const amplitudeMin = amplitudeValues.length > 0 ? Math.min(...amplitudeValues) : -1;
+    const amplitudeMax = amplitudeValues.length > 0 ? Math.max(...amplitudeValues) : 1;
+    const amplitudeSpan = Math.max(amplitudeMax - amplitudeMin, 1);
     const allS1RegionOverlays =
       workspaceKind === "heartsound"
         ? buildHeartsoundRegionOverlays(
@@ -3137,6 +3322,11 @@ const PanelCard = memo(function PanelCard({
         data: amplitudePairs
       });
     }
+    const noteSeries =
+      isLabelingMode ? buildChartNoteMarkerSeries(panel.chartNoteMarkers, amplitudePairs) : null;
+    if (noteSeries) {
+      mainSeries.push(noteSeries);
+    }
     if (workspaceKind === "heartsound" && selectedCycle && panel.showSelectedCycleHighlight) {
       mainSeries.push({
         name: "Selected Cycle",
@@ -3171,10 +3361,6 @@ const PanelCard = memo(function PanelCard({
       });
     }
     if (workspaceKind === "heartsound" && selectedParameterMeasurement && amplitudePairs.length > 0) {
-      const amplitudeValues = amplitudePairs.map((pair) => pair[1]);
-      const amplitudeMin = Math.min(...amplitudeValues);
-      const amplitudeMax = Math.max(...amplitudeValues);
-      const amplitudeSpan = Math.max(amplitudeMax - amplitudeMin, 1);
       const annotationY = amplitudeMin + amplitudeSpan * 0.12;
 
       mainSeries.push({
@@ -3760,6 +3946,7 @@ const PanelCard = memo(function PanelCard({
   }, [
     activePlot,
     heartsoundCandidateSettings,
+    isLabelingMode,
     overviewPlot,
     panel,
     selectedCycle,
@@ -3831,28 +4018,33 @@ const PanelCard = memo(function PanelCard({
     [onSliderRangeCommit, panel.fileId, panel.panelId, panel.totalRows]
   );
 
-  const onNavigatorClick = useCallback(
+  const onChartClick = useCallback(
     (event: { seriesName?: string; value?: unknown }) => {
-      if (
-        event.seriesName !== "Navigator" ||
-        !panel.fileId ||
-        panel.totalRows === null ||
-        panel.totalRows <= 0
-      ) {
-        return;
-      }
-
       const rawValue = Array.isArray(event.value) ? event.value[0] : event.value;
       if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) {
         return;
       }
 
+      if (!panel.fileId || panel.totalRows === null || panel.totalRows <= 0) {
+        return;
+      }
+
       const maxIndex = Math.max(panel.totalRows - 1, 0);
+      const clickedIndex = clampNumber(Math.round(rawValue), 0, maxIndex);
+
+      if (isLabelingMode && event.seriesName !== "Navigator") {
+        onSelectLabelingAnchor(panel.panelId, clickedIndex);
+        return;
+      }
+
+      if (event.seriesName !== "Navigator") {
+        return;
+      }
+
       const currentWidth = Math.max(panel.rangeEnd - panel.rangeStart, 0);
-      const centeredIndex = clampNumber(Math.round(rawValue), 0, maxIndex);
       const halfWidth = Math.floor(currentWidth / 2);
 
-      let nextStart = centeredIndex - halfWidth;
+      let nextStart = clickedIndex - halfWidth;
       let nextEnd = nextStart + currentWidth;
 
       if (nextStart < 0) {
@@ -3865,7 +4057,16 @@ const PanelCard = memo(function PanelCard({
 
       onSliderRangeCommit(panel.panelId, nextStart, nextEnd);
     },
-    [onSliderRangeCommit, panel.fileId, panel.panelId, panel.rangeEnd, panel.rangeStart, panel.totalRows]
+    [
+      isLabelingMode,
+      onSelectLabelingAnchor,
+      onSliderRangeCommit,
+      panel.fileId,
+      panel.panelId,
+      panel.rangeEnd,
+      panel.rangeStart,
+      panel.totalRows,
+    ]
   );
 
   return (
@@ -3885,6 +4086,11 @@ const PanelCard = memo(function PanelCard({
           ) : null}
           {panel.unsupervisedFileName ? (
             <div className="panel-linked-parameter">Unsupervised: {panel.unsupervisedFileName}</div>
+          ) : null}
+          {isLabelingMode && isActive ? (
+            <div className="panel-linked-parameter">
+              Label sample: {labelingAnchorIndex === null ? "-" : formatRowNumber(labelingAnchorIndex)}
+            </div>
           ) : null}
         </div>
 
@@ -3966,21 +4172,63 @@ const PanelCard = memo(function PanelCard({
           >
             Detail
           </button>
-          <label
-            className={`panel-parameter-toggle${panel.showParameterSummary ? " is-active" : ""}`}
-            title="Toggle parameter panel"
-            aria-label="Toggle parameter panel"
-          >
-            <input
-              className="panel-parameter-toggle-input"
-              type="checkbox"
-              checked={panel.showParameterSummary}
-              onChange={() => onToggleParameterSummary(panel.panelId)}
-            />
-            <span className="panel-parameter-toggle-label">
-              <ParameterIcon />
-            </span>
-          </label>
+          {isLabelingMode ? (
+            <>
+              {(["q", "w", "e", "r"] as ChartNoteMarkerKey[]).map((keyTag) => {
+                const markerStyle = CHART_NOTE_MARKER_STYLES[keyTag];
+                return (
+                  <button
+                    key={keyTag}
+                    type="button"
+                    className="panel-action-button"
+                    style={{ borderColor: markerStyle.color, color: markerStyle.color }}
+                    onClick={() => {
+                      if (labelingAnchorIndex === null) {
+                        return;
+                      }
+                      onAddLabelingMarker(panel.panelId, labelingAnchorIndex, keyTag);
+                    }}
+                    disabled={labelingAnchorIndex === null}
+                    title={labelingAnchorIndex === null ? "Click the graph first" : `Add ${markerStyle.label} label`}
+                  >
+                    {markerStyle.label}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                className="panel-action-button"
+                onClick={() => onClearLabelingMarkers(panel.panelId)}
+                disabled={panel.chartNoteMarkers.length === 0}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="panel-action-button"
+                onClick={() => onDownloadLabelingExport(panel.panelId)}
+                disabled={!panel.fileId || isLabelingExporting}
+              >
+                {isLabelingExporting ? "Preparing..." : "Download xlsx"}
+              </button>
+            </>
+          ) : (
+            <label
+              className={`panel-parameter-toggle${panel.showParameterSummary ? " is-active" : ""}`}
+              title="Toggle parameter panel"
+              aria-label="Toggle parameter panel"
+            >
+              <input
+                className="panel-parameter-toggle-input"
+                type="checkbox"
+                checked={panel.showParameterSummary}
+                onChange={() => onToggleParameterSummary(panel.panelId)}
+              />
+              <span className="panel-parameter-toggle-label">
+                <ParameterIcon />
+              </span>
+            </label>
+          )}
           <button
             type="button"
             className="icon-button"
@@ -4020,7 +4268,7 @@ const PanelCard = memo(function PanelCard({
                   ref={chartRef}
                   option={chartOption}
                   style={{ width: "100%", height: "100%" }}
-                  onEvents={{ datazoom: onDataZoom, click: onNavigatorClick }}
+                  onEvents={{ datazoom: onDataZoom, click: onChartClick }}
                   notMerge
                   lazyUpdate
                 />
@@ -4421,6 +4669,7 @@ const PanelCard = memo(function PanelCard({
 
 function App() {
   const [appState, setAppState] = useState<AppState>(createAppState());
+  const [viewMode, setViewMode] = useState<ViewMode>("analysis");
   const [healthStatus, setHealthStatus] = useState<HealthStatus>("checking");
   const [authState, setAuthState] = useState<AuthState>(INITIAL_AUTH_STATE);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
@@ -4445,6 +4694,9 @@ function App() {
   const [settingsPanelId, setSettingsPanelId] = useState<PanelId | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<SettingsDraft | null>(null);
   const [seriesPanelId, setSeriesPanelId] = useState<PanelId | null>(null);
+  const [labelingPanelId, setLabelingPanelId] = useState<PanelId | null>(null);
+  const [labelingExportPanelId, setLabelingExportPanelId] = useState<PanelId | null>(null);
+  const [labelingAnchorIndex, setLabelingAnchorIndex] = useState<number | null>(null);
 
   const requestSeqRef = useRef<Record<PanelId, number>>({ 1: 0, 2: 0, 3: 0, 4: 0 });
   const prefetchedRangeRef = useRef<PrefetchedRangeStore>({});
@@ -4475,12 +4727,46 @@ function App() {
     settingsPanelId !== null ? panels.find((panel) => panel.panelId === settingsPanelId) ?? null : null;
   const seriesPanel =
     seriesPanelId !== null ? panels.find((panel) => panel.panelId === seriesPanelId) ?? null : null;
+  const labelingPanel =
+    labelingPanelId !== null ? panels.find((panel) => panel.panelId === labelingPanelId) ?? null : null;
   const settingsTargetWorkspace = settingsPanel?.workspaceKind ?? activeWorkspace;
   const settingsRangeShiftStep = getRangeShiftStep(settingsTargetWorkspace);
   const files = filesByWorkspace[activeWorkspace];
   const filesLoading = filesLoadingByWorkspace[activeWorkspace];
   const uploading = uploadingByWorkspace[activeWorkspace];
   const availableFileRoleTabs = useMemo(() => getAvailableFileRoleTabs(activeWorkspace), [activeWorkspace]);
+  const labelingPlotState = labelingPanelId !== null ? panelPlots[labelingPanelId] : null;
+  const labelingActivePlot = labelingPlotState?.current ?? labelingPlotState?.overview ?? null;
+  const labelingAmplitudePairs = useMemo(
+    () => (labelingActivePlot ? toDataPairs(labelingActivePlot.x, labelingActivePlot.amplitude) : []),
+    [labelingActivePlot]
+  );
+  const labelingAmplitudeLookup = useMemo(
+    () => buildPairValueLookup(labelingAmplitudePairs),
+    [labelingAmplitudePairs]
+  );
+  const labelingAnchorAmplitude = useMemo(() => {
+    if (labelingAnchorIndex === null) {
+      return null;
+    }
+    return getLookupValue(labelingAmplitudeLookup, labelingAnchorIndex);
+  }, [labelingAmplitudeLookup, labelingAnchorIndex]);
+  const labelingMarkerCounts = useMemo(() => {
+    const counts: Record<ChartNoteMarkerKey, number> = {
+      q: 0,
+      w: 0,
+      e: 0,
+      r: 0,
+    };
+    if (!labelingPanel) {
+      return counts;
+    }
+    for (const marker of labelingPanel.chartNoteMarkers) {
+      counts[marker.keyTag] += 1;
+    }
+    return counts;
+  }, [labelingPanel]);
+  const labelingModePanelId = viewMode === "labeling" ? activePanelId : null;
 
   const updateAppState = useCallback((updater: (state: AppState) => AppState) => {
     setAppState((previous) => updater(previous));
@@ -4569,6 +4855,55 @@ function App() {
     },
     [setPanelUnsupervisedState]
   );
+
+  const addPanelChartNoteMarker = useCallback(
+    (panelId: PanelId, index: number, keyTag: ChartNoteMarkerKey) => {
+      updatePanelState(panelId, (panel) => ({
+        ...panel,
+        chartNoteMarkers: panel.chartNoteMarkers.some(
+          (marker) => marker.index === index && marker.keyTag === keyTag
+        )
+          ? panel.chartNoteMarkers
+          : [
+              ...panel.chartNoteMarkers,
+              {
+                id: `${keyTag}-${index}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                index,
+                keyTag,
+              },
+            ],
+      }));
+    },
+    [updatePanelState]
+  );
+
+  useEffect(() => {
+    if (labelingModePanelId === null || labelingAnchorIndex === null) {
+      return undefined;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isTypingTarget(event.target)) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key !== "q" && key !== "w" && key !== "e" && key !== "r") {
+        return;
+      }
+
+      event.preventDefault();
+      addPanelChartNoteMarker(labelingModePanelId, labelingAnchorIndex, key);
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [addPanelChartNoteMarker, labelingAnchorIndex, labelingModePanelId]);
+
+  useEffect(() => {
+    setLabelingAnchorIndex(null);
+  }, [activePanelId, viewMode]);
 
   const selectPanelCycle = useCallback(
     (panelId: PanelId, cycleIndex: number) => {
@@ -4838,6 +5173,63 @@ function App() {
         }));
       } finally {
         setParameterExportPanelId((current) => (current === panelId ? null : current));
+      }
+    },
+    [panels, refreshAuthState, updateAppState]
+  );
+
+  const downloadLabelingExportForPanel = useCallback(
+    async (panelId: PanelId) => {
+      const panel = panels.find((item) => item.panelId === panelId);
+      if (!panel?.fileId) {
+        updateAppState((previous) => ({
+          ...previous,
+          statusMessage: "No data file is linked to this panel."
+        }));
+        return;
+      }
+
+      const sourceName = panel.fileName ?? "labels";
+      const fallbackFilename = `${sourceName.replace(/\.[^.]+$/, "")}_labels.xlsx`;
+      setLabelingExportPanelId(panelId);
+
+      try {
+        const response = await fetch(`/api/files/${panel.fileId}/labeling-export`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            markers: panel.chartNoteMarkers.map((marker) => ({
+              index: marker.index,
+              keyTag: marker.keyTag,
+            })),
+          }),
+        });
+        if (response.status === 401) {
+          await refreshAuthState();
+          throw new Error("login required");
+        }
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(extractErrorMessage(payload));
+        }
+
+        const blob = await response.blob();
+        const filename = extractDownloadFilename(response, fallbackFilename);
+        triggerBlobDownload(blob, filename);
+        updateAppState((previous) => ({
+          ...previous,
+          statusMessage: `Downloaded ${filename}`
+        }));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "failed to download labeling xlsx";
+        updateAppState((previous) => ({
+          ...previous,
+          statusMessage: `Download failed: ${message}`
+        }));
+      } finally {
+        setLabelingExportPanelId((current) => (current === panelId ? null : current));
       }
     },
     [panels, refreshAuthState, updateAppState]
@@ -5587,7 +5979,8 @@ function App() {
         previousRangeStart: null,
         previousRangeEnd: null,
         rangeStart: 0,
-        rangeEnd: initialRangeEnd
+        rangeEnd: initialRangeEnd,
+        chartNoteMarkers: []
       }));
       clearPanelPlotState(activePanelId);
       void (async () => {
@@ -5855,6 +6248,213 @@ function App() {
   const closeSeriesPicker = useCallback(() => {
     setSeriesPanelId(null);
   }, []);
+
+  const closeLabelingWorkspace = useCallback(() => {
+    setLabelingPanelId(null);
+    setLabelingAnchorIndex(null);
+  }, []);
+
+  const clearLabelingMarkersForPanel = useCallback(
+    (panelId: PanelId) => {
+      updatePanelState(panelId, (panel) => ({
+        ...panel,
+        chartNoteMarkers: [],
+      }));
+      setLabelingAnchorIndex(null);
+    },
+    [updatePanelState]
+  );
+
+  const onLabelingChartClick = useCallback(
+    (event: { value?: unknown }) => {
+      if (!labelingPanel?.fileId || labelingPanel.totalRows === null || labelingPanel.totalRows <= 0) {
+        return;
+      }
+
+      const rawValue = Array.isArray(event.value) ? event.value[0] : event.value;
+      if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) {
+        return;
+      }
+
+      const maxIndex = Math.max(labelingPanel.totalRows - 1, 0);
+      setLabelingAnchorIndex(clampNumber(Math.round(rawValue), 0, maxIndex));
+    },
+    [labelingPanel]
+  );
+
+  const onLabelingDataZoom = useCallback(
+    (event: {
+      batch?: Array<{
+        start?: number;
+        end?: number;
+        startValue?: number;
+        endValue?: number;
+      }>;
+      start?: number;
+      end?: number;
+      startValue?: number;
+      endValue?: number;
+    }) => {
+      if (!labelingPanel?.fileId || labelingPanel.totalRows === null || labelingPanel.totalRows <= 0) {
+        return;
+      }
+
+      const payload = Array.isArray(event.batch) && event.batch.length > 0 ? event.batch[0] : event;
+      const maxIndex = Math.max(labelingPanel.totalRows - 1, 0);
+
+      let nextStart: number | undefined;
+      let nextEnd: number | undefined;
+      if (typeof payload.startValue === "number" && typeof payload.endValue === "number") {
+        nextStart = Math.round(payload.startValue);
+        nextEnd = Math.round(payload.endValue);
+      } else if (typeof payload.start === "number" && typeof payload.end === "number") {
+        nextStart = Math.round((payload.start / 100) * maxIndex);
+        nextEnd = Math.round((payload.end / 100) * maxIndex);
+      }
+
+      if (nextStart === undefined || nextEnd === undefined) {
+        return;
+      }
+
+      applyPanelRange(
+        labelingPanel.panelId,
+        clampNumber(nextStart, 0, maxIndex),
+        clampNumber(nextEnd, clampNumber(nextStart, 0, maxIndex), maxIndex)
+      );
+    },
+    [applyPanelRange, labelingPanel]
+  );
+
+  const labelingChartOption = useMemo<EChartsOption | null>(() => {
+    if (!labelingPanel?.fileId || !labelingActivePlot) {
+      return null;
+    }
+
+    const totalRows = labelingPanel.totalRows ?? labelingActivePlot.originalRowCount;
+    const maxIndex = Math.max(totalRows - 1, 0);
+    const safeStart = clampNumber(labelingPanel.rangeStart, 0, maxIndex);
+    const safeEnd = clampNumber(labelingPanel.rangeEnd, safeStart, maxIndex);
+    const amplitudePairs = labelingAmplitudePairs;
+    const series: NonNullable<EChartsOption["series"]> = [
+      {
+        name: labelingPanel.workspaceKind === "ecg" ? "raw" : "Amplitude",
+        type: "line",
+        xAxisIndex: 0,
+        yAxisIndex: 0,
+        showSymbol: false,
+        animation: false,
+        lineStyle: {
+          width: labelingPanel.styleOptions.amplitudeLineWidth,
+          color: labelingPanel.workspaceKind === "ecg" ? ECG_SERIES_COLORS.amplitude : "#79c0ff",
+        },
+        itemStyle: {
+          color: labelingPanel.workspaceKind === "ecg" ? ECG_SERIES_COLORS.amplitude : "#79c0ff",
+        },
+        data: amplitudePairs,
+      },
+    ];
+
+    if (labelingPanel.workspaceKind === "heartsound") {
+      const s1StartPairs = toDataPairs(labelingActivePlot.x, labelingActivePlot.s1Start);
+      const s1EndPairs = toDataPairs(labelingActivePlot.x, labelingActivePlot.s1End);
+      const s2StartPairs = toDataPairs(labelingActivePlot.x, labelingActivePlot.s2Start);
+      const s2EndPairs = toDataPairs(labelingActivePlot.x, labelingActivePlot.s2End);
+      const resolved = resolveOverlappingHeartsoundRegionOverlays(
+        buildHeartsoundRegionOverlays("S1", s1StartPairs, s1EndPairs, "rgba(46, 160, 67, 0.14)", "rgba(46, 160, 67, 0.42)"),
+        buildHeartsoundRegionOverlays("S2", s2StartPairs, s2EndPairs, "rgba(248, 81, 73, 0.13)", "rgba(248, 81, 73, 0.38)")
+      );
+      for (const regionOverlay of [...resolved.s1Overlays, ...resolved.s2Overlays]) {
+        series.push({
+          name: `${regionOverlay.label} Region`,
+          type: "line",
+          xAxisIndex: 0,
+          yAxisIndex: 0,
+          z: 0,
+          silent: true,
+          showSymbol: false,
+          animation: false,
+          lineStyle: { opacity: 0 },
+          itemStyle: { opacity: 0 },
+          tooltip: { show: false },
+          data: [],
+          markArea: {
+            silent: true,
+            label: { show: false },
+            itemStyle: {
+              color: regionOverlay.fillColor,
+              borderColor: regionOverlay.borderColor,
+              borderWidth: 1,
+              borderType: "solid",
+            },
+            data: [[
+              { name: regionOverlay.label, xAxis: regionOverlay.areaStart },
+              { xAxis: regionOverlay.areaEnd },
+            ]],
+          },
+        });
+      }
+    }
+
+    const noteSeries = buildChartNoteMarkerSeries(labelingPanel.chartNoteMarkers, amplitudePairs);
+    if (noteSeries) {
+      series.push(noteSeries);
+    }
+
+    return {
+      animation: false,
+      grid: {
+        left: 48,
+        right: 24,
+        top: 24,
+        bottom: 68,
+        containLabel: true,
+      },
+      tooltip: {
+        trigger: "axis",
+        axisPointer: { type: "line" },
+      },
+      xAxis: [
+        {
+          type: "value",
+          min: safeStart,
+          max: safeEnd,
+          boundaryGap: false,
+          axisLabel: { color: "#8b949e" },
+          axisLine: { lineStyle: { color: "#30363d" } },
+          splitLine: { lineStyle: { color: "rgba(48, 54, 61, 0.35)" } },
+        },
+      ],
+      yAxis: [
+        {
+          type: "value",
+          scale: true,
+          axisLabel: { color: "#8b949e" },
+          axisLine: { lineStyle: { color: "#30363d" } },
+          splitLine: { lineStyle: { color: "rgba(48, 54, 61, 0.35)" } },
+        },
+      ],
+      dataZoom: [
+        {
+          type: "inside",
+          xAxisIndex: 0,
+          startValue: safeStart,
+          endValue: safeEnd,
+          zoomLock: false,
+          filterMode: "none",
+        },
+        {
+          type: "slider",
+          xAxisIndex: 0,
+          startValue: safeStart,
+          endValue: safeEnd,
+          height: 28,
+          bottom: 18,
+          filterMode: "none",
+        },
+      ],
+      series,
+    };
+  }, [labelingActivePlot, labelingAmplitudePairs, labelingPanel]);
 
   const updateSettingsRange = useCallback(
     (nextStart: number, nextEnd: number) => {
@@ -6517,26 +7117,38 @@ function App() {
                     key={workspace.key}
                     type="button"
                     className={
-                      workspace.key === activeWorkspace
+                      viewMode === "analysis" && workspace.key === activeWorkspace
                         ? "workspace-switch-button active"
                         : "workspace-switch-button"
                     }
                     onClick={() => {
                       closeSettingsModal();
                       setIsDeleteModalOpen(false);
+                      setViewMode("analysis");
                       void updatePanelWorkspace(activePanelId, workspace.key);
                     }}
                   >
                     {workspace.label}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className={viewMode === "labeling" ? "workspace-switch-button active" : "workspace-switch-button"}
+                  onClick={() => {
+                    closeSettingsModal();
+                    setIsDeleteModalOpen(false);
+                    setViewMode("labeling");
+                  }}
+                >
+                  Labeling
+                </button>
               </div>
               <div className="toolbar-status">
                 <span className={`health-badge ${healthStatus}`}>API: {healthStatus}</span>
                 <span className="health-badge">
                   {authState.accessMode === "code" ? "Access: code" : "Access: open"}
                 </span>
-                <span>{activeWorkspace === "heartsound" ? "Workspace: HeartSound" : "Workspace: ECG"}</span>
+                <span>{viewMode === "labeling" ? "Mode: Labeling" : activeWorkspace === "heartsound" ? "Workspace: HeartSound" : "Workspace: ECG"}</span>
                 <span>{`Files: ${getFileRoleLabel(activeFileRole)}`}</span>
                 <span>Active Panel: {activePanelId}</span>
                 <button type="button" className="split-button" onClick={openAdminModal}>
@@ -6576,7 +7188,22 @@ function App() {
                     onSelectCycle={selectPanelCycle}
                     onSelectParameterMetric={selectPanelParameterMetric}
                     onDownloadParameterExport={downloadParameterExportForPanel}
+                    onDownloadLabelingExport={downloadLabelingExportForPanel}
+                    onClearLabelingMarkers={clearLabelingMarkersForPanel}
+                    onSelectLabelingAnchor={(targetPanelId, index) => {
+                      if (targetPanelId !== activePanelId) {
+                        updateAppState((previous) => ({
+                          ...previous,
+                          activePanelId: targetPanelId
+                        }));
+                      }
+                      setLabelingAnchorIndex(index);
+                    }}
+                    onAddLabelingMarker={addPanelChartNoteMarker}
+                    isLabelingMode={viewMode === "labeling"}
+                    labelingAnchorIndex={panelId === activePanelId ? labelingAnchorIndex : null}
                     isParameterExporting={parameterExportPanelId === panelId}
+                    isLabelingExporting={labelingExportPanelId === panelId}
                   />
                 );
               })}
@@ -6584,6 +7211,112 @@ function App() {
           </main>
         </div>
       )}
+
+      {!isAccessLocked && labelingPanel ? (
+        <div className="modal-overlay" role="presentation" onClick={closeLabelingWorkspace}>
+          <div
+            className="modal-card labeling-modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Labeling workspace"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-title labeling-modal-title">
+              <div className="labeling-modal-title-group">
+                <div>Panel {labelingPanel.panelId} Labeling Workspace</div>
+                <div className="labeling-modal-subtitle">
+                  Click one sample, then press <strong>Q</strong>, <strong>W</strong>, <strong>E</strong>, or <strong>R</strong> to place a label line.
+                </div>
+              </div>
+            </div>
+            <div className="modal-body labeling-modal-body">
+              <div className="labeling-toolbar">
+                <div className="labeling-toolbar-section">
+                  <div className="labeling-toolbar-label">File</div>
+                  <div className="labeling-toolbar-value">
+                    {labelingPanel.fileName ?? "No data file linked"}
+                  </div>
+                </div>
+                <div className="labeling-toolbar-section">
+                  <div className="labeling-toolbar-label">Selected Sample</div>
+                  <div className="labeling-toolbar-value">
+                    {labelingAnchorIndex === null ? "-" : formatRowNumber(labelingAnchorIndex)}
+                  </div>
+                </div>
+                <div className="labeling-toolbar-section">
+                  <div className="labeling-toolbar-label">Amplitude</div>
+                  <div className="labeling-toolbar-value">
+                    {labelingAnchorAmplitude === null
+                      ? "-"
+                      : `${formatMetricValue(labelingAnchorAmplitude)} mV`}
+                  </div>
+                </div>
+                <div className="labeling-toolbar-section">
+                  <div className="labeling-toolbar-label">Range</div>
+                  <div className="labeling-toolbar-value">
+                    {formatRowNumber(labelingPanel.rangeStart)} - {formatRowNumber(labelingPanel.rangeEnd)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="labeling-key-grid" aria-label="Labeling key legend">
+                {(["q", "w", "e", "r"] as ChartNoteMarkerKey[]).map((keyTag) => {
+                  const style = CHART_NOTE_MARKER_STYLES[keyTag];
+                  return (
+                    <div key={keyTag} className="labeling-key-card">
+                      <span
+                        className="labeling-key-swatch"
+                        style={{ background: style.color, borderColor: style.color }}
+                        aria-hidden="true"
+                      />
+                      <span className="labeling-key-name">{style.label}</span>
+                      <span className="labeling-key-shortcut">{keyTag.toUpperCase()}</span>
+                      <span className="labeling-key-count">{labelingMarkerCounts[keyTag]} labels</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="labeling-chart-shell">
+                {!labelingChartOption ? (
+                  <div className="empty-state">Load a data file to start labeling.</div>
+                ) : (
+                  <ReactECharts
+                    option={labelingChartOption}
+                    style={{ width: "100%", height: "100%" }}
+                    onEvents={{ click: onLabelingChartClick, datazoom: onLabelingDataZoom }}
+                    notMerge
+                    lazyUpdate
+                  />
+                )}
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="danger-action"
+                onClick={() => clearLabelingMarkersForPanel(labelingPanel.panelId)}
+                disabled={labelingPanel.chartNoteMarkers.length === 0}
+              >
+                Clear labels
+              </button>
+              <button
+                type="button"
+                className="parameter-download-button"
+                onClick={() => {
+                  void downloadLabelingExportForPanel(labelingPanel.panelId);
+                }}
+                disabled={labelingExportPanelId === labelingPanel.panelId || !labelingPanel.fileId}
+              >
+                {labelingExportPanelId === labelingPanel.panelId ? "Preparing xlsx..." : "Download xlsx"}
+              </button>
+              <button type="button" className="split-button" onClick={closeLabelingWorkspace}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {!isAccessLocked && settingsPanel && settingsDraft ? (
         <div className="modal-overlay" role="presentation">

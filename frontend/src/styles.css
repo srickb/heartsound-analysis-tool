@@ -1714,6 +1714,113 @@ body {
   width: min(420px, calc(100vw - 32px));
 }
 
+.labeling-modal-card {
+  width: min(1180px, calc(100vw - 32px));
+  max-height: min(88vh, 920px);
+}
+
+.labeling-modal-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.labeling-modal-title-group {
+  display: grid;
+  gap: 4px;
+}
+
+.labeling-modal-subtitle {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #8b949e;
+}
+
+.labeling-modal-body {
+  gap: 14px;
+}
+
+.labeling-toolbar {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.labeling-toolbar-section {
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  background: #0d1117;
+  padding: 10px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.labeling-toolbar-label {
+  font-size: 11px;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.labeling-toolbar-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f0f6fc;
+  word-break: break-word;
+}
+
+.labeling-key-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.labeling-key-card {
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  background: #111827;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.labeling-key-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.labeling-key-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0f6fc;
+}
+
+.labeling-key-shortcut {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8b949e;
+}
+
+.labeling-key-count {
+  grid-column: 2 / 4;
+  font-size: 11px;
+  color: #8b949e;
+}
+
+.labeling-chart-shell {
+  min-height: 540px;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0d1117;
+}
+
 .series-modal-grid {
   display: grid;
   gap: 10px;
@@ -1753,6 +1860,11 @@ body {
 @media (max-width: 1200px) {
   .app-shell {
     grid-template-columns: 260px 1fr;
+  }
+
+  .labeling-toolbar,
+  .labeling-key-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1803,5 +1915,21 @@ body {
 
   .parameter-metric-value {
     text-align: left;
+  }
+
+  .labeling-modal-card {
+    width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+  }
+
+  .labeling-chart-shell {
+    min-height: 420px;
+  }
+}
+
+@media (max-width: 640px) {
+  .labeling-toolbar,
+  .labeling-key-grid {
+    grid-template-columns: 1fr;
   }
 }
