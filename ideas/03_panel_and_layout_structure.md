@@ -1,247 +1,241 @@
-# Panel and Layout Structure
+# Panel 및 Layout 구조
 
-## Purpose
+## 목적
 
-This document describes the visual and structural layout model of the Tool.
+이 문서는 Tool의 시각적·구조적 layout model을 설명한다.
 
-The panel system is one of the core architectural concepts of the application.
-It defines how users compare cases, bind files, inspect plots, and open the
-parameter window.
+panel system은 이 애플리케이션의 핵심 아키텍처 개념 중 하나이다.  
+이 구조는 사용자가 case를 비교하고, 파일을 연결하고, plot을 확인하고, parameter window를 여는 방식을 정의한다.
 
-## Scope
+## 범위
 
-This category covers:
+이 카테고리에서 다루는 내용은 다음과 같다.
 
-- one-panel and two-panel modes
+- one-panel 및 two-panel mode
 - panel identity
-- header actions
+- header action
 - chart/parameter split layout
-- per-panel linked state
-- panel reset behavior
+- panel별 linked state
+- panel reset 동작
 
-This category does not cover:
+이 카테고리에서 다루지 않는 내용은 다음과 같다.
 
-- the analytical meaning of parameter values
-- S1/S2 detection formulas
-- wave timing formulas
+- parameter value의 분석적 의미
+- S1/S2 detection formula
+- wave timing formula
 
-## Core Layout Model
+## 핵심 Layout 모델
 
-The current application layout is divided into two major areas:
+현재 애플리케이션 layout은 두 개의 주요 영역으로 나뉜다.
 
 - left sidebar
 - right analysis area
 
-Within the analysis area, the product supports:
+analysis area 내부에서 제품은 다음 두 가지 구성을 지원한다.
 
 - `1 Panel`
 - `2 Panels`
 
-This makes the panel the central unit of inspection.
+즉, panel은 전체 inspection의 중심 단위이다.
 
 ## Panel Identity
 
-Each panel has its own state and identity.
+각 panel은 고유한 state와 identity를 가진다.
 
-A panel can independently hold:
+하나의 panel은 독립적으로 다음 정보를 가질 수 있다.
 
-- a primary data file
-- a linked wave file
-- a linked parameter source
-- a linked unsupervised file
-- its own current graph range
-- its own selected cycle
-- its own selected parameter metric
+- primary data file
+- linked wave file
+- linked parameter source
+- linked unsupervised file
+- 자체 graph range
+- 자체 selected cycle
+- 자체 selected parameter metric
 
-This means panels are not merely duplicated visuals.
-They are independent review contexts.
+즉, panel은 단순히 복제된 시각 요소가 아니라, 서로 독립된 review context이다.
 
-## Supported Review Modes
+## 지원되는 Review Mode
 
 ### Single-Panel Mode
 
-Single-panel mode is optimized for:
+Single-panel mode는 다음 상황에 최적화되어 있다.
 
-- focused review
-- detailed inspection
-- parameter-driven exploration
+- 집중 검토
+- 상세 확인
+- parameter 중심 탐색
 - audio-linked investigation
 
 ### Two-Panel Mode
 
-Two-panel mode is optimized for:
+Two-panel mode는 다음 상황에 최적화되어 있다.
 
-- case comparison
-- left/right variation review
+- case 비교
+- 좌우 차이 검토
 - cross-file analysis
-- feature comparison under the same UI rules
+- 동일한 UI 규칙 안에서의 feature 비교
 
-## Panel Header Structure
+## Panel Header 구조
 
-Each analysis panel has a header area that exposes several controls.
+각 analysis panel에는 여러 control이 배치된 header 영역이 있다.
 
-Current major elements include:
+현재 주요 구성 요소는 다음과 같다.
 
-- panel title and linked file name
-- linked wave information
-- `Default` button
-- `Detail` button
+- panel title 및 linked file name
+- linked wave 정보
+- `Default` 버튼
+- `Detail` 버튼
 - parameter window toggle
-- settings button
-- reset button
-- wave playback controls in the central header area
+- settings 버튼
+- reset 버튼
+- 중앙 header 영역의 wave playback control
 
-This header is not purely decorative.
-It is the main command surface for the active panel.
+이 header는 단순한 장식 요소가 아니다.  
+현재 활성 panel에 대한 주요 command surface 역할을 한다.
 
-## `Default` Button
+## `Default` 버튼
 
-The `Default` button restores the default visualization state for the panel.
+`Default` 버튼은 해당 panel의 기본 시각화 상태를 복원한다.
 
-Its purpose is to give the user a quick reset path when:
+이 버튼의 목적은 다음과 같은 상황에서 빠른 reset 경로를 제공하는 것이다.
 
-- too many series have been toggled
-- the graph becomes visually noisy
-- a known starting configuration is needed
+- 너무 많은 series가 toggle된 경우
+- graph가 시각적으로 복잡해진 경우
+- 익숙한 시작 상태로 빠르게 돌아가야 하는 경우
 
-## `Detail` Button
+## `Detail` 버튼
 
-The `Detail` button opens the series-selection modal.
+`Detail` 버튼은 series-selection modal을 연다.
 
-Its purpose is to allow:
+이 버튼의 목적은 다음과 같다.
 
-- fine-grained control over visible overlays and score channels
-- restoration through the `All` toggle or the default-state path
+- visible overlay 및 score channel에 대한 세밀한 제어
+- `All` toggle 또는 default-state 복원을 통한 원상 복귀
 
-This panel-level modal is part of the current review workflow.
+이 panel 단위 modal은 현재 review workflow의 일부이다.
 
 ## Parameter Toggle
 
-The parameter window can be shown or hidden per panel.
+parameter window는 panel별로 표시하거나 숨길 수 있다.
 
-This means the panel supports at least two inspection modes:
+즉, 하나의 panel은 최소한 다음 두 가지 inspection mode를 지원한다.
 
-- graph-only emphasis
-- graph + parameter interpretation
+- graph 중심 보기
+- graph + parameter 해석 보기
 
-The toggle is intentionally lightweight because users frequently switch between
-these two review modes.
+이 toggle은 사용자가 이 두 가지 review mode 사이를 자주 오가기 때문에 가볍게 사용할 수 있도록 설계되어 있다.
 
-## Settings and Reset
+## Settings 및 Reset
 
 ### Settings
 
-The panel settings control is used for per-panel visualization and auxiliary
-configuration.
+panel settings control은 panel별 시각화 설정 및 보조 configuration에 사용된다.
 
 ### Reset
 
-The reset control restores the panel’s assigned analysis context.
-It is designed to recover from accumulated exploratory state.
+reset control은 panel에 할당된 분석 맥락을 복원한다.  
+탐색 과정에서 누적된 state를 정리하고 다시 시작할 수 있도록 설계되어 있다.
 
-## Graph and Parameter Split
+## Graph와 Parameter Split
 
-Inside a panel, the lower content area is vertically divided into:
+panel 내부의 하단 content area는 수직으로 다음 두 영역으로 나뉜다.
 
 - graph area
 - parameter window
 
-These are separated by a draggable resize handle.
+이 두 영역은 draggable resize handle로 구분된다.
 
-### Current Behavior
+### 현재 동작 방식
 
-When the parameter window is visible:
+parameter window가 표시된 상태에서는 다음이 가능하다.
 
-- the user can drag the split handle
-- the chart and parameter areas resize dynamically
+- 사용자가 split handle을 drag할 수 있다
+- chart와 parameter 영역의 크기가 동적으로 조절된다
 
-This allows:
+이를 통해 다음과 같은 사용이 가능해진다.
 
-- more graph space for wave-following review
-- more parameter space for metric comparison
+- wave-following review를 위한 더 넓은 graph 공간 확보
+- metric comparison을 위한 더 넓은 parameter 공간 확보
 
-## Current Split Design Intent
+## 현재 Split 설계 의도
 
-The split system supports two very different use styles:
+이 split system은 서로 다른 두 가지 사용 방식을 지원한다.
 
-- waveform-centric review
-- metric-centric review
+- waveform 중심 검토
+- metric 중심 검토
 
-It avoids forcing one fixed ratio for all sessions.
+즉, 모든 세션에 하나의 고정 비율을 강제하지 않도록 설계되어 있다.
 
-## Per-Panel State Isolation
+## Panel별 State 분리
 
-A key design principle of the panel system is state isolation.
+panel system의 핵심 설계 원칙 중 하나는 state isolation이다.
 
-What this means:
+의미는 다음과 같다.
 
-- changing one panel does not automatically mutate the other
-- file bindings are panel-specific
-- cycle selection is panel-specific
-- graph viewport is panel-specific
-- wave playback context is panel-specific
+- 한 panel의 변경이 다른 panel에 자동으로 영향을 주지 않는다
+- file binding은 panel별로 유지된다
+- cycle selection은 panel별로 유지된다
+- graph viewport는 panel별로 유지된다
+- wave playback context는 panel별로 유지된다
 
-This is necessary for meaningful side-by-side comparison.
+이 구조는 의미 있는 side-by-side comparison을 위해 필요하다.
 
-## Active Panel Concept
+## Active Panel 개념
 
-The application tracks an active panel concept for interactions that depend on
-current focus.
+애플리케이션은 현재 focus에 따라 동작하는 interaction을 위해 active panel 개념을 추적한다.
 
-Examples include:
+예시는 다음과 같다.
 
-- assigning a sidebar file to the intended panel
-- opening modal actions for the correct panel
-- keyboard-driven actions tied to the current review target
+- sidebar의 파일을 의도한 panel에 할당
+- 올바른 panel에 modal action 열기
+- 현재 review target에 연결된 keyboard action 처리
 
-## Range Awareness
+## Range 인식 구조
 
-Each panel maintains its own visible row range.
+각 panel은 자체 visible row range를 유지한다.
 
-This is important because:
+이것이 중요한 이유는 다음과 같다.
 
-- graph rendering depends on current range
-- cycle visibility depends on current range
-- parameter-linked annotations depend on current range
-- wave playback viewport behavior depends on current range
+- graph rendering이 현재 range에 의존하기 때문
+- cycle visibility가 현재 range에 의존하기 때문
+- parameter-linked annotation이 현재 range에 의존하기 때문
+- wave playback viewport 동작이 현재 range에 의존하기 때문
 
-## Layout Stability
+## Layout 안정성
 
-The current layout prioritizes:
+현재 layout은 다음 요소를 우선시한다.
 
-- consistent placement of core controls
-- stable panel header organization
-- predictable graph/parameter separation
+- 핵심 control의 일관된 배치
+- 안정적인 panel header 구성
+- 예측 가능한 graph/parameter 분리 구조
 
-This is especially important because the Tool is used interactively rather than
-as a static dashboard.
+이는 Tool이 정적인 dashboard가 아니라 interactive하게 사용된다는 점에서 특히 중요하다.
 
 ## Core Files
 
-Representative files in this category include:
+이 카테고리와 관련된 대표 파일은 다음과 같다.
 
 - `frontend/src/App.tsx`
 - `frontend/src/styles.css`
 
-## Future Expansion Notes
+## 향후 확장 메모
 
-Possible future enhancements:
+향후 가능한 확장 방향은 다음과 같다.
 
-- panel presets
-- detachable comparison modes
-- saved per-panel views
-- panel-specific note widgets
-- more advanced multi-panel synchronization
+- panel preset
+- detachable comparison mode
+- panel별 saved view
+- panel-specific note widget
+- 더 고급화된 multi-panel synchronization
 
-## Summary
+## 요약
 
-The current panel and layout structure gives the product its working shape.
+현재 panel 및 layout 구조는 제품의 실제 사용 형태를 결정하는 기반이다.
 
-It combines:
+이 구조는 다음 요소를 결합한다.
 
-- independent analysis panels
-- a consistent action header
-- flexible graph/parameter resizing
-- panel-level file context
+- 서로 독립적인 analysis panel
+- 일관된 action header
+- 유연한 graph/parameter resize 구조
+- panel 단위 file context
 
-This category is the UI container layer for almost every other major feature.
+즉, 이 카테고리는 거의 모든 주요 기능을 담아내는 UI container layer라고 볼 수 있다.

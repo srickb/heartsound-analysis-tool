@@ -67,7 +67,7 @@ cleanup_stale_pid_files
 existing_launcher_pid="$(read_pid_file "${LAUNCHER_PID_FILE}")"
 if [[ -n "${existing_launcher_pid}" ]] && is_pid_running "${existing_launcher_pid}"; then
   print_error "launcher is already running with PID ${existing_launcher_pid}"
-  print_info "Use ./stop_dev.sh first if you want to restart it."
+  print_info "Use ./bin/stop_dev.sh first if you want to restart it."
   exit 1
 fi
 
@@ -156,7 +156,7 @@ TAIL_FRONTEND_PID=$!
 print_success "Launcher started successfully."
 print_info "Frontend: http://127.0.0.1:${FRONTEND_PORT}"
 print_info "Backend:  http://127.0.0.1:${BACKEND_PORT}"
-print_info "Press Ctrl+C to stop both services, or run ./stop_dev.sh from another terminal."
+print_info "Press Ctrl+C to stop both services, or run ./bin/stop_dev.sh from another terminal."
 
 while true; do
   if ! is_pid_running "${BACKEND_PID}"; then

@@ -26,22 +26,22 @@ Last updated: 2026-03-19
 
 최상위 launcher 명령어:
 
-- `./start`  
+- `./bin/start`  
   frontend와 backend를 로컬에서 실행한다.
 
-- `./stop_dev.sh`  
+- `./bin/stop_dev.sh`  
   로컬 frontend와 backend 프로세스를 중지한다.
 
-- `./status_dev.sh`  
+- `./bin/status_dev.sh`  
   launcher, frontend, backend, share-tunnel 상태를 출력한다.
 
-- `./health_dev.sh`  
+- `./bin/health_dev.sh`  
   로컬 앱의 health 상태를 확인한다.
 
-- `./code`  
+- `./bin/code`  
   access mode가 `code`일 때 사용할 1회용 숫자 access code를 생성한다.
 
-- `./share`  
+- `./bin/share`  
   frontend용 Cloudflare public tunnel을 시작한다.  
   현재 동작:
   - public URL 출력
@@ -49,7 +49,7 @@ Last updated: 2026-03-19
   - `pbcopy`를 사용해 public URL을 macOS clipboard에 자동 복사
   - 이미 share tunnel이 실행 중이면 기존 URL을 다시 출력하고 다시 복사함
 
-- `./stop_share.sh`  
+- `./bin/stop_share.sh`  
   public share tunnel을 중지한다.
 
 ## 3. 접근 및 인증
@@ -875,7 +875,7 @@ Full-resolution heartsound playback의 경우:
 
 현재 public share flow는 다음과 같다.
 
-1. `./share`가 frontend availability를 확인한다.
+1. `./bin/share`가 frontend availability를 확인한다.
 2. `cloudflared`를 찾거나 다운로드한다.
 3. detached tunnel process를 시작한다.
 4. `trycloudflare.com` URL이 나올 때까지 대기한다.

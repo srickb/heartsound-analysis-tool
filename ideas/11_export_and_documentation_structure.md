@@ -1,73 +1,70 @@
-# Export and Documentation Structure
+# Export 및 Documentation 구조
 
-## Purpose
+## 목적
 
-This document describes how the Tool currently externalizes its computed
-information and how project knowledge is documented inside the repository.
+이 문서는 현재 Tool이 계산된 정보를 어떻게 외부로 내보내는지, 그리고 프로젝트 지식이 repository 내부에서 어떻게 문서화되고 있는지를 설명한다.
 
-This category is about persistence and communication rather than direct
-interactive analysis.
+이 카테고리는 직접적인 interactive analysis보다는, 결과의 지속성(persistence)과 전달(communication)에 관한 내용이다.
 
-## Scope
+## 범위
 
-This category covers:
+이 카테고리에서 다루는 내용은 다음과 같다.
 
 - parameter xlsx export
-- export content structure
-- metadata sheet behavior
-- implementation documents
-- PRD-level documentation
-- parameter formula references
-- role of the `ideas` folder
+- export content 구조
+- metadata sheet 동작
+- implementation document
+- PRD 수준 문서
+- parameter formula reference
+- `ideas` 폴더의 역할
 
-This category does not cover:
+이 카테고리에서 다루지 않는 내용은 다음과 같다.
 
-- runtime behavior
+- runtime 동작
 - graph rendering logic
-- file upload internals
+- file upload 내부 구조
 
-## Export Philosophy
+## Export 철학
 
-The current Tool does not stop at on-screen analysis.
-It also allows the user to extract computed HeartSound parameters as a workbook.
+현재 Tool은 화면 위 분석에서 끝나지 않는다.  
+사용자가 계산된 HeartSound parameter를 workbook 형태로 추출할 수 있도록 지원한다.
 
-This is important because many research workflows require:
+이것이 중요한 이유는 많은 연구 workflow가 다음을 필요로 하기 때문이다.
 
 - offline review
-- comparison outside the app
+- 앱 외부에서의 비교
 - record keeping
-- spreadsheet-based analysis
+- spreadsheet 기반 분석
 
-## Current Parameter Export
+## 현재 Parameter Export
 
-The parameter window includes a `Download xlsx` action.
+parameter window에는 `Download xlsx` action이 포함되어 있다.
 
-For HeartSound data, this export contains:
+HeartSound data의 경우, 이 export에는 다음이 포함된다.
 
-- cycle-wise derived parameter rows
-- metadata about the export source
+- cycle 단위로 계산된 derived parameter row
+- export source에 대한 metadata
 
-This makes the export a structured representation of the current derived
-analysis, not just a screenshot of the UI.
+즉, 이 export는 단순한 UI 화면 캡처가 아니라, 현재 derived analysis를 구조화된 형태로 표현한 결과물이다.
 
-## Workbook Structure
+## Workbook 구조
 
-The current workbook contains at least:
+현재 workbook에는 최소한 다음 sheet가 포함된다.
 
 - `Parameters` sheet
 - `Metadata` sheet
 
 ### `Parameters` Sheet
 
-This sheet contains:
+이 sheet에는 다음이 포함된다.
 
-- one row per valid cycle
-- structural anchors such as start/end positions
-- derived metrics for S1, S2, relation gaps, RS score, and HR
+- valid cycle당 1개 row
+- start/end position과 같은 structural anchor
+- S1, S2, relation gap, RS score, HR에 대한 derived metric
 
 ### `Metadata` Sheet
 
-This sheet records export context such as:
+이 sheet는 export context를 기록한다. 예시는 다음과 같다.
 
 - source file id
 - original file name
@@ -75,122 +72,117 @@ This sheet records export context such as:
 - file role
 - exported row count
 
-This makes the workbook easier to audit later.
+이 정보는 이후 workbook을 다시 확인하거나 검토할 때 유용하다.
 
-## Export Scope Rule
+## Export 범위 규칙
 
-For HeartSound data:
+HeartSound data의 경우:
 
-- the export uses derived parameter rows created from the data file
-- invalid cycles are filtered out
+- export는 data file로부터 생성된 derived parameter row를 사용한다
+- invalid cycle은 제외된다
 
-This ensures the exported table corresponds to the same valid cycle structure
-used in the UI.
+즉, export된 table은 UI에서 사용되는 valid cycle structure와 동일한 기준을 따른다.
 
-## Documentation Layers in the Repository
+## Repository 내부의 Documentation Layer
 
-The current repository already contains multiple documentation layers.
+현재 repository에는 이미 여러 층위의 documentation이 존재한다.
 
 ### 1. Current Implementation Spec
 
-This document records how the Tool currently works in implementation terms.
+이 문서는 현재 Tool이 구현상 어떤 방식으로 동작하는지를 기록한다.
 
-Current file:
+현재 파일:
 
 - `process/current_implementation_spec.md`
 
 ### 2. Product Requirements Document
 
-This document captures product-level requirements and system framing.
+이 문서는 제품 수준의 요구사항과 시스템 framing을 정리한다.
 
-Current file:
+현재 파일:
 
-- `process/product_requirements_document.md`
+- `product_requirements_document.md`
 
 ### 3. Heartsound Parameter Formula Reference
 
-This document records the current formula definitions for the implemented
-HeartSound parameter set.
+이 문서는 현재 구현된 HeartSound parameter set의 formula 정의를 기록한다.
 
-Current file:
+현재 파일:
 
 - `process/heartsound_parameter_formula_reference.md`
 
-## Role of the `ideas` Folder
+## `ideas` 폴더의 역할
 
-The `ideas` folder is the conceptual and planning layer.
+`ideas` 폴더는 개념 정리와 기획을 위한 계층이다.
 
-It currently contains:
+현재 이 폴더에는 다음이 포함된다.
 
-- earlier idea/code notes
-- parameter planning material
-- structured concept documents such as the ones being added now
+- 이전 단계의 idea/code note
+- parameter 기획 자료
+- 지금처럼 추가되고 있는 구조화된 concept 문서
 
-Its role is different from `process`.
+이 역할은 `process`와는 다르다.
 
 ### `process`
 
-- describes the current product and shipped behavior
+- 현재 제품과 실제 반영된 동작을 설명한다
 
 ### `ideas`
 
-- describes structured concepts, categories, design reasoning, and future-facing
-  documentation organization
+- 구조화된 개념, category, design reasoning, 미래 지향적 documentation organization을 설명한다
 
-## Why This Category Matters
+## 왜 이 카테고리가 중요한가
 
-Without export and documentation, the Tool would be difficult to:
+export와 documentation이 없다면, 이 Tool은 다음 측면에서 활용이 어려워진다.
 
-- explain to collaborators
-- extend safely
-- validate against intended behavior
-- use in research workflows that require saved outputs
+- 협업자에게 설명하기
+- 안전하게 확장하기
+- 의도된 동작과 실제 동작을 검증하기
+- 저장 가능한 output이 필요한 연구 workflow에 적용하기
 
-This category creates continuity between code, UI, and external artifacts.
+즉, 이 카테고리는 code, UI, external artifact 사이의 연속성을 만들어준다.
 
-## Current Strengths
+## 현재 강점
 
-The current export/documentation model already supports:
+현재 export/documentation model은 이미 다음을 지원한다.
 
-- reproducible parameter download
-- repository-based knowledge retention
-- separation of implementation spec vs product intent vs formula detail
+- 재현 가능한 parameter download
+- repository 기반 지식 보존
+- implementation spec, product intent, formula detail의 분리
 
-This is a strong foundation for continued development.
+이는 이후 개발을 이어가기 위한 강한 기반이 된다.
 
-## Current Limitations
+## 현재 한계
 
-Some documentation is still distributed across:
+일부 documentation은 아직 다음 위치에 분산되어 있다.
 
-- source comments
-- process docs
-- idea notes
-- UI behavior itself
+- source comment
+- process 문서
+- idea note
+- UI 동작 자체
 
-This means continued curation is still valuable.
+즉, 앞으로도 지속적인 정리와 통합이 여전히 중요하다.
 
-## Future Expansion Notes
+## 향후 확장 메모
 
-Potential future work:
+향후 가능한 확장 방향은 다음과 같다.
 
 - export schema versioning
-- richer metadata in workbook exports
-- user-selected export subsets
-- generated docs from source metadata
-- tighter linkage between formula docs and code identifiers
+- workbook export에 더 풍부한 metadata 추가
+- 사용자 선택 기반 export subset
+- source metadata로부터 생성되는 문서
+- formula 문서와 code identifier 간의 더 긴밀한 연결
 
-## Summary
+## 요약
 
-The current export and documentation structure gives the Tool durability beyond
-the live UI session.
+현재 export 및 documentation 구조는 Tool이 live UI session을 넘어 지속성을 가지게 해준다.
 
-It provides:
+이 구조는 다음을 제공한다.
 
-- downloadable computed parameter workbooks
-- implementation documentation
-- requirement documentation
-- formula documentation
-- concept-organization documentation through the `ideas` folder
+- 다운로드 가능한 computed parameter workbook
+- implementation 문서
+- requirement 문서
+- formula 문서
+- `ideas` 폴더를 통한 concept-organization 문서
 
-This category is what allows the Tool to be maintained, explained, and reused
-over time.
+즉, 이 카테고리는 Tool이 시간이 지나도 유지되고, 설명되고, 재사용될 수 있도록 해주는 기반이다.

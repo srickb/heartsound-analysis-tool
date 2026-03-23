@@ -23,7 +23,7 @@ fi
 
 launcher_pid="$(read_pid_file "${LAUNCHER_PID_FILE}")"
 if [[ -z "${launcher_pid}" ]] || ! is_pid_running "${launcher_pid}"; then
-  print_warning "launcher is not running right now. The code will still be generated, but users cannot log in until ./start is running."
+  print_warning "launcher is not running right now. The code will still be generated, but users cannot log in until ./bin/start is running."
 fi
 
 print_info "Generating a new 5-minute numeric access code..."

@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "${ROOT_DIR}"
 
 set +e
-./start
+./bin/start
 EXIT_CODE=$?
 set -e
 

@@ -1,31 +1,29 @@
-# Heartsound Parameter Set Structure
+# HeartSound Parameter Set 구조
 
-## Purpose
+## 목적
 
-This document catalogs the currently implemented HeartSound parameter set as it
-appears in the Tool.
+이 문서는 현재 Tool에 구현되어 있는 HeartSound parameter set을 정리한다.
 
-Its goal is to describe what families of parameters currently exist and how they
-are organized for user interpretation.
+목적은 현재 어떤 parameter family가 존재하는지, 그리고 사용자가 해석하기 쉽도록 어떻게 구성되어 있는지를 설명하는 것이다.
 
-## Scope
+## 범위
 
-This category covers:
+이 카테고리에서 다루는 내용은 다음과 같다.
 
-- current implemented parameter families
-- category-level organization
-- role of each parameter family
-- what each family is intended to tell the user
+- 현재 구현된 parameter family
+- category 단위 구성 방식
+- 각 parameter family의 역할
+- 각 family가 사용자에게 어떤 정보를 전달하려는지
 
-This category does not cover:
+이 카테고리에서 다루지 않는 내용은 다음과 같다.
 
-- exact formulas
-- export formatting mechanics
-- rendering implementation details
+- 정확한 formula
+- export formatting 방식
+- rendering implementation detail
 
-## Current Top-Level Parameter Categories
+## 현재 Top-Level Parameter Category
 
-The current HeartSound parameter system is organized into:
+현재 HeartSound parameter system은 다음과 같이 구성되어 있다.
 
 - `S1`
 - `S2`
@@ -33,14 +31,14 @@ The current HeartSound parameter system is organized into:
 - `RS Score`
 - `HR`
 
-The first four appear as main parameter categories in the parameter window.
-`HR` is shown separately near the cycle control.
+앞의 네 항목은 parameter window의 주요 category로 표시된다.  
+`HR`은 cycle control 근처에 별도로 표시된다.
 
 ## 1. S1 Category
 
-The `S1` category contains parameters derived from the S1 sound interval itself.
+`S1` category는 S1 sound interval 자체에서 파생된 parameter를 포함한다.
 
-Current implemented members:
+현재 구현된 항목은 다음과 같다.
 
 - `S1 Duration`
 - `S1 Peak`
@@ -51,20 +49,20 @@ Current implemented members:
 - `S1_s Centroid`
 - `S1_e Centroid`
 
-### What This Category Tells the User
+### 이 Category가 사용자에게 알려주는 것
 
-The `S1` category answers questions such as:
+`S1` category는 다음과 같은 질문에 답한다.
 
-- how long S1 lasts
-- how strong S1 is
-- how much signal mass exists inside S1
-- whether the S1 energy distribution leans toward the start or the end
+- S1이 얼마나 오래 지속되는지
+- S1이 얼마나 강한지
+- S1 내부에 얼마나 많은 signal mass가 존재하는지
+- S1의 energy distribution이 시작 쪽에 더 치우치는지, 끝 쪽에 더 치우치는지
 
 ## 2. S2 Category
 
-The `S2` category mirrors the S1 category but applies to the S2 sound interval.
+`S2` category는 S1 category와 유사한 구조를 가지지만, S2 sound interval에 적용된다.
 
-Current implemented members:
+현재 구현된 항목은 다음과 같다.
 
 - `S2 Duration`
 - `S2 Peak`
@@ -75,21 +73,20 @@ Current implemented members:
 - `S2_s Centroid`
 - `S2_e Centroid`
 
-### What This Category Tells the User
+### 이 Category가 사용자에게 알려주는 것
 
-The `S2` category helps interpret:
+`S2` category는 다음과 같은 해석을 돕는다.
 
 - S2 duration
 - S2 strength
-- S2 internal signal energy
-- whether S2 is front-weighted or back-weighted
+- S2 내부 signal energy
+- S2가 앞쪽에 더 무게가 실리는지, 뒤쪽에 더 무게가 실리는지
 
 ## 3. S1-S2 Category
 
-The current `S1-S2` category contains both systolic and diastolic gap-style
-measurements.
+현재 `S1-S2` category에는 systolic gap과 diastolic gap 성격의 measurement가 함께 포함되어 있다.
 
-It includes:
+포함 항목은 다음과 같다.
 
 - `S1-S2 Duration`
 - `S1-S2 Peak`
@@ -100,24 +97,23 @@ It includes:
 - `S2-S1 Mean`
 - `S2-S1 Energy`
 
-Even though the visual section title is `S1-S2`, the section intentionally
-contains both directions of between-sound gap measurement.
+시각적 section title은 `S1-S2`이지만,  
+이 section은 의도적으로 두 방향의 between-sound gap measurement를 모두 포함한다.
 
-### What This Category Tells the User
+### 이 Category가 사용자에게 알려주는 것
 
-This category helps answer:
+이 category는 다음과 같은 질문에 답하는 데 도움을 준다.
 
-- how large the S1 to S2 gap is
-- how large the S2 to next S1 gap is
-- how much signal exists between the primary sound regions
-- how energetic those inter-sound regions are
+- S1에서 S2까지의 gap이 얼마나 큰지
+- S2에서 다음 S1까지의 gap이 얼마나 큰지
+- 주요 sound region 사이에 어느 정도의 signal이 존재하는지
+- 그 inter-sound region이 얼마나 energetic한지
 
 ## 4. RS Score Category
 
-The `RS Score` category contains parameters derived from the RS-score channels
-that were already used to determine the primary HeartSound event structure.
+`RS Score` category는 primary HeartSound event structure를 결정하는 데 이미 사용된 RS-score channel에서 파생된 parameter를 포함한다.
 
-Current implemented members:
+현재 구현된 항목은 다음과 같다.
 
 - `S1_s RS Peak`
 - `S1_e RS Peak`
@@ -128,51 +124,50 @@ Current implemented members:
 - `S2_s RS Width`
 - `S2_e RS Width`
 
-### What This Category Tells the User
+### 이 Category가 사용자에게 알려주는 것
 
-This category helps interpret:
+이 category는 다음과 같은 해석을 돕는다.
 
-- how strong each selected event peak is in the RS domain
-- how wide each selected RS event spreads around its local peak
+- 선택된 각 event peak가 RS domain에서 얼마나 강한지
+- 선택된 각 RS event가 local peak 주변으로 얼마나 넓게 퍼져 있는지
 
-These metrics are about the event-detection representation, not the raw
-amplitude waveform alone.
+이 metric들은 raw amplitude waveform만을 보는 것이 아니라, event-detection representation을 반영한다.
 
 ## 5. HR Category
 
-`HR` is currently separated from the main card grid.
+`HR`은 현재 main card grid와 분리되어 표시된다.
 
-Displayed form:
+표시 형식은 다음과 같다.
 
 - `HR xxx bpm`
 
-### What This Category Tells the User
+### 이 Category가 사용자에게 알려주는 것
 
-This category answers:
+이 category는 다음 질문에 답한다.
 
-- how fast the current cycle is repeating
-- the implied beats-per-minute value from the current cycle span
+- 현재 cycle이 얼마나 빠르게 반복되는지
+- 현재 cycle span으로부터 계산된 beats-per-minute 값이 무엇인지
 
-## Why the Current Set Is Structured This Way
+## 현재 Set이 이렇게 구성된 이유
 
-The current set is intentionally divided into:
+현재 set은 의도적으로 다음과 같이 나뉘어 있다.
 
-- sound-internal metrics
-- gap metrics
-- RS-score event metrics
+- sound 내부 metric
+- gap metric
+- RS-score event metric
 - cycle-level rhythm metric
 
-This is more interpretable than mixing everything into one long flat list.
+이 구조는 모든 항목을 하나의 긴 flat list로 섞어 놓는 것보다 해석하기 쉽다.
 
-## Current Naming Style
+## 현재 Naming Style
 
-The visible naming system aims to be:
+현재 visible naming system은 다음 방향을 목표로 한다.
 
-- short
-- direct
-- close to the displayed UI form
+- 짧을 것
+- 직접적일 것
+- 실제 UI에 표시되는 형태와 가깝게 유지할 것
 
-Examples:
+예시는 다음과 같다.
 
 - `S1 Duration`
 - `S2 Peak`
@@ -181,47 +176,47 @@ Examples:
 - `S1-S2 Energy`
 - `HR`
 
-## Relationship to Graph Annotations
+## Graph Annotation과의 관계
 
-Each parameter family maps naturally to graph interpretation:
+각 parameter family는 graph 해석과 자연스럽게 연결된다.
 
 - `S1` -> S1 segment
 - `S2` -> S2 segment
 - `S1-S2` -> inter-sound gap
-- `RS Score` -> event-centered RS region or point
+- `RS Score` -> event 중심 RS region 또는 point
 - `HR` -> cycle span
 
-This is why the parameter families are meaningful as separate categories rather
-than only as data columns.
+따라서 이 parameter family들은 단순한 data column 집합이 아니라, 각각 독립적인 category로서 의미를 가진다.
 
-## Design Intent
+## 설계 의도
 
-The current parameter set is meant to be:
+현재 parameter set은 다음 특성을 갖도록 설계되어 있다.
 
 - compact
 - interpretable
 - cycle-specific
-- strongly grounded in visible signal structure
+- 눈에 보이는 signal structure에 강하게 연결된 형태
 
-It is not intended to be a maximal feature dump.
+즉, 이 구조는 최대한 많은 feature를 무작정 쏟아내기 위한 목적은 아니다.
 
-## Future Expansion Notes
+## 향후 확장 메모
 
-Possible future additions:
+향후 추가될 수 있는 방향은 다음과 같다.
 
-- morphology metrics
-- more stable energy-shape descriptors
-- candidate-event parameter families
-- pathology-focused summary groups
+- morphology metric
+- 더 안정적인 energy-shape descriptor
+- candidate-event parameter family
+- pathology-focused summary group
 
-## Summary
+## 요약
 
-The current HeartSound parameter set is a structured, reviewer-oriented feature
-catalog composed of:
+현재 HeartSound parameter set은 reviewer 중심으로 구성된 구조화된 feature catalog이다.
 
-- sound-specific metrics
-- between-sound gap metrics
-- RS-score event metrics
+이 구조는 다음 요소로 이루어진다.
+
+- sound-specific metric
+- between-sound gap metric
+- RS-score event metric
 - cycle-level heart-rate context
 
-This category defines what the Tool currently measures and exposes.
+즉, 이 카테고리는 Tool이 현재 무엇을 측정하고 사용자에게 보여주는지를 정의한다.

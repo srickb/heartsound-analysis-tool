@@ -108,7 +108,7 @@ cleanup_stale_pid_files
 
 if ! port_in_use "${FRONTEND_PORT}"; then
   print_error "frontend is not running on port ${FRONTEND_PORT}"
-  print_info "Start the project first with ./start"
+  print_info "Start the project first with ./bin/start"
   exit 1
 fi
 
@@ -175,7 +175,7 @@ for _ in {1..30}; do
     print_success "Public URL: ${share_url}"
     copy_share_url_to_clipboard "${share_url}"
     print_info "Anyone with this URL can open the site from another network while this share tunnel stays running."
-    print_info "If access mode is code, also run ./code and share the 5-minute numeric code."
+    print_info "If access mode is code, also run ./bin/code and share the 5-minute numeric code."
     exit 0
   fi
 

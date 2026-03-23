@@ -1,154 +1,150 @@
-# Heartsound Cycle and S1/S2 Structure
+# HeartSound Cycle 및 S1/S2 구조
 
-## Purpose
+## 목적
 
-This document explains how the current Tool defines HeartSound cycles and how it
-derives usable S1 and S2 event regions from RS-score channels.
+이 문서는 현재 Tool이 HeartSound cycle을 어떻게 정의하는지, 그리고 RS-score channel로부터 어떻게 사용 가능한 S1 및 S2 event region을 도출하는지를 설명한다.
 
-This is one of the most important structural categories in the product because
-many downstream features depend on it.
+이 카테고리는 제품 내에서 가장 중요한 구조적 범주 중 하나이다.  
+많은 downstream feature가 이 구조에 의존하기 때문이다.
 
-## Scope
+## 범위
 
-This category covers:
+이 카테고리에서 다루는 내용은 다음과 같다.
 
-- S1 and S2 area construction
+- S1 및 S2 area 구성
 - peak pairing logic
-- overlap handling
-- cycle validity rules
+- overlap 처리
+- cycle validity rule
 - cycle indexing
 - panel cycle selection semantics
 
-This category does not cover:
+이 카테고리에서 다루지 않는 내용은 다음과 같다.
 
-- parameter formulas themselves
+- parameter formula 자체
 - wave playback
 - export formatting
 
-## Input Signals Used for Boundary Logic
+## Boundary Logic에 사용되는 입력 신호
 
-The HeartSound data model includes RS-score channels that act as boundary
-signals:
+HeartSound data model에는 boundary signal 역할을 하는 RS-score channel이 포함되어 있다.
 
 - `S1-Start_RS_Score`
 - `S1-End_RS_Score`
 - `S2-Start_RS_Score`
 - `S2-End_RS_Score`
 
-These are used together with the amplitude signal to construct the event
-structure of each record.
+이 채널들은 amplitude signal과 함께 사용되어 각 record의 event structure를 구성한다.
 
-## S1 and S2 Region Construction
+## S1 및 S2 Region 구성
 
-The current implementation builds event regions by:
+현재 구현은 다음 절차를 통해 event region을 생성한다.
 
-1. extracting threshold-based peak candidates from start and end RS-score series
-2. pairing start peaks with end peaks of the same sound type
-3. discarding invalid or excessively wide pairings
-4. constructing an interval overlay using the selected start and end peaks
+1. start 및 end RS-score series에서 threshold 기반 peak candidate를 추출한다
+2. 동일한 sound type 내에서 start peak와 end peak를 pairing한다
+3. 유효하지 않거나 지나치게 넓은 pairing은 제외한다
+4. 최종 선택된 start peak와 end peak를 이용해 interval overlay를 구성한다
 
-This results in:
+이 과정을 통해 다음이 생성된다.
 
-- `S1` overlays
-- `S2` overlays
+- `S1` overlay
+- `S2` overlay
 
-Each overlay contains:
+각 overlay는 다음 정보를 포함한다.
 
 - start peak
 - end peak
 - area start
 - area end
 
-## Threshold and Pairing Behavior
+## Threshold 및 Pairing 동작
 
-The event logic is not based on arbitrary nearest-neighbor pairing alone.
+event logic은 단순히 임의의 nearest-neighbor pairing만으로 동작하지 않는다.
 
-It also considers:
+추가로 다음 요소들도 함께 고려한다.
 
 - region ordering
-- spacing constraints
-- maximum width relative to cycle spacing
+- spacing constraint
+- cycle spacing 대비 최대 허용 width
 
-This helps reject unrealistic intervals.
+이러한 조건은 비현실적인 interval을 걸러내는 데 도움을 준다.
 
-## Overlap Resolution
+## Overlap 해결
 
-S1 and S2 candidates can become visually or logically ambiguous.
+S1과 S2 candidate는 시각적으로나 논리적으로 모호해질 수 있다.
 
-To reduce this problem, the current implementation resolves overlap conflicts.
+이 문제를 줄이기 위해 현재 구현은 overlap conflict를 해소하는 로직을 가진다.
 
-High-level rule:
+상위 규칙은 다음과 같다.
 
-- if overlapping regions compete, stronger evidence is preferred
+- overlap되는 region이 경쟁할 경우, 더 강한 evidence를 가진 쪽을 우선한다
 
-This prevents obviously conflicting S1/S2 intervals from surviving together.
+이 규칙은 명백히 충돌하는 S1/S2 interval이 동시에 남지 않도록 한다.
 
-## Current Cycle Definition
+## 현재 Cycle 정의
 
-The current cycle rule is:
+현재 cycle rule은 다음과 같다.
 
-- cycle `n` starts at `S1 start` of cycle `n`
-- cycle `n` ends immediately before `S1 start` of cycle `n+1`
+- cycle `n`은 cycle `n`의 `S1 start`에서 시작한다
+- cycle `n`은 cycle `n+1`의 `S1 start` 직전에서 끝난다
 
-Operationally, this means:
+운영상 이는 다음 의미를 가진다.
 
-- current cycle span = `current S1 start -> next S1 start`
+- 현재 cycle span = `current S1 start -> next S1 start`
 
-This is the cycle definition used by:
+이 cycle 정의는 다음 기능에서 사용된다.
 
 - cycle navigation
 - parameter grouping
 - HR calculation
 - graph cycle highlight
 
-## Valid Cycle Ordering Rule
+## 유효한 Cycle 순서 규칙
 
-A cycle is considered valid only when the following order holds:
+하나의 cycle은 다음 순서가 성립할 때만 valid하다고 간주된다.
 
 - `S1 start < S1 end < S2 start < S2 end < next S1 start`
 
-This ordering rule is fundamental.
+이 ordering rule은 매우 핵심적이다.
 
-It prevents malformed cycles from being treated as analyzable beats.
+이 규칙은 형태가 잘못된 cycle이 분석 가능한 beat로 취급되지 않도록 한다.
 
-## S2 Matching Rule
+## S2 Matching 규칙
 
-Within a cycle:
+하나의 cycle 내부에서 S2는 다음 조건을 만족해야 한다.
 
-- S2 must occur after the current S1 end
-- S2 must occur before the next S1 start
-- the selected S2 must preserve the valid ordering rule
+- 현재 S1 end 이후에 발생해야 한다
+- 다음 S1 start 이전에 발생해야 한다
+- 선택된 S2는 valid ordering rule을 유지해야 한다
 
-This means S2 is not chosen independently of cycle context.
+즉, S2는 cycle context와 무관하게 독립적으로 선택되는 것이 아니다.
 
 ## Cycle Indexing
 
-Cycles are assigned explicit cycle numbers in order.
+cycle에는 순서대로 명시적인 cycle 번호가 부여된다.
 
-The numbering is based on the sorted valid S1 sequence.
+이 numbering은 정렬된 valid S1 sequence를 기준으로 한다.
 
-This cycle index is then used in:
+이 cycle index는 이후 다음 기능들에 사용된다.
 
-- the parameter window
-- cycle stepping controls
-- exported parameter rows
-- graph-linked interactions
+- parameter window
+- cycle stepping control
+- exported parameter row
+- graph-linked interaction
 
-## Cycle Visibility in the UI
+## UI에서의 Cycle 가시성
 
-The UI currently supports:
+현재 UI는 다음 기능을 지원한다.
 
-- selecting a cycle by stepping left/right
-- seeing the selected cycle index
-- viewing the highlighted sample range of that cycle
-- automatically moving the graph viewport when the selected cycle is outside the
-  visible range
+- 좌우 step으로 cycle 선택
+- 현재 선택된 cycle index 확인
+- 해당 cycle의 highlighted sample range 확인
+- 선택된 cycle이 visible range 밖에 있을 경우 graph viewport 자동 이동
 
-This makes cycle review deterministic and navigable.
+이 구조 덕분에 cycle review는 일관되고 탐색 가능하게 유지된다.
 
-## Importance to the Product
+## 제품에서의 중요성
 
-This category underpins:
+이 카테고리는 다음 기능들의 기반이 된다.
 
 - S1 parameter extraction
 - S2 parameter extraction
@@ -158,43 +154,41 @@ This category underpins:
 - parameter export
 - parameter-to-graph annotation
 
-If cycle structure breaks, nearly the entire HeartSound review layer becomes
-unreliable.
+즉, cycle structure가 무너지면 HeartSound review layer의 거의 전체가 신뢰하기 어려워진다.
 
-## Design Intent
+## 설계 의도
 
-The current design intentionally favors:
+현재 설계는 의도적으로 다음 요소를 우선한다.
 
-- strict beat ordering
-- explicit cycle validity
-- interpretability over permissive matching
+- 엄격한 beat ordering
+- 명시적인 cycle validity
+- 과도하게 허용적인 matching보다 해석 가능성 우선
 
-This is important because downstream metrics need stable anchors.
+이는 downstream metric이 안정적인 anchor를 필요로 하기 때문에 중요하다.
 
 ## Core Files
 
-Representative files in this category include:
+이 카테고리와 관련된 대표 파일은 다음과 같다.
 
 - `backend/app/services/plot_data_service.py`
 - `frontend/src/App.tsx`
 
-## Future Expansion Notes
+## 향후 확장 메모
 
-Possible next steps:
+향후 가능한 확장 방향은 다음과 같다.
 
-- more explicit cycle validity diagnostics in the UI
-- user-visible rejected-cycle explanations
+- UI에서 더 명시적인 cycle validity diagnostic 제공
+- 사용자에게 보이는 rejected-cycle 설명
 - cycle confidence scoring
-- optional manual correction workflows
+- 선택적 manual correction workflow
 
-## Summary
+## 요약
 
-The current HeartSound cycle and S1/S2 structure defines the temporal backbone
-of the Tool.
+현재 HeartSound cycle 및 S1/S2 구조는 Tool의 시간축 backbone을 정의한다.
 
-It determines:
+이 구조는 다음을 결정한다.
 
-- where each sound begins and ends
-- which cycles are valid
-- how beats are indexed
-- how all major downstream HeartSound analysis is anchored
+- 각 sound가 어디서 시작하고 끝나는지
+- 어떤 cycle이 valid한지
+- beat가 어떤 방식으로 indexing되는지
+- HeartSound의 주요 downstream analysis가 어떤 기준점에 anchoring되는지

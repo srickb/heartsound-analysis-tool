@@ -1,169 +1,160 @@
-# S3 and S4 Candidate Structure
+# S3 및 S4 Candidate 구조
 
-## Purpose
+## 목적
 
-This document explains how the Tool currently treats S3 and S4 as candidate
-events rather than definitive diagnostic labels.
+이 문서는 현재 Tool이 S3와 S4를 확정적인 진단 label이 아니라 candidate event로 어떻게 다루는지를 설명한다.
 
-The emphasis of this category is exploratory detection and visual highlighting.
+이 카테고리의 핵심은 exploratory detection과 visual highlighting에 있다.
 
-## Scope
+## 범위
 
-This category covers:
+이 카테고리에서 다루는 내용은 다음과 같다.
 
-- candidate concept
-- timing windows
-- amplitude-driven candidate logic
-- relation to the S1/S2 cycle structure
+- candidate 개념
+- timing window
+- amplitude 기반 candidate logic
+- S1/S2 cycle structure와의 관계
 - graph rendering behavior
 - visibility control
 
-This category does not cover:
+이 카테고리에서 다루지 않는 내용은 다음과 같다.
 
-- final pathology classification
-- user-authored annotation workflows
-- external ML prediction systems
+- 최종 pathology classification
+- 사용자가 직접 작성하는 annotation workflow
+- 외부 ML prediction system
 
-## Conceptual Role
+## 개념적 역할
 
-The current Tool does not claim to diagnose S3 or S4 with certainty.
+현재 Tool은 S3 또는 S4를 확정적으로 진단한다고 주장하지 않는다.
 
-Instead, it identifies:
+대신 다음 두 가지를 식별한다.
 
 - `S3 candidate`
 - `S4 candidate`
 
-These candidates are intended to answer:
+이 candidate는 본질적으로 다음 질문에 답하기 위한 것이다.
 
-- where an additional low-amplitude event might exist relative to the current
-  cycle structure
+- 현재 cycle structure를 기준으로 볼 때, 추가적인 low-amplitude event가 존재할 가능성이 있는 위치가 어디인가
 
-## Temporal Placement Rule
+## 시간적 배치 규칙
 
-The current conceptual model is:
+현재의 개념적 모델은 다음과 같다.
 
-- `S3` belongs just after `S2`
-- `S4` belongs just before the next `S1`
+- `S3`는 `S2` 직후에 위치한다
+- `S4`는 다음 `S1` 직전에 위치한다
 
-This makes S3/S4 dependent on the already constructed cycle.
+즉, S3/S4는 이미 구성된 cycle에 의존한다.
 
-They are not searched over the entire record blindly.
+전체 record를 대상으로 무작정 탐색하는 방식은 아니다.
 
-## Candidate Windows
+## Candidate Window
 
-The current implementation uses cycle-aware windows.
+현재 구현은 cycle-aware window를 사용한다.
 
-High-level intent:
+상위 수준의 의도는 다음과 같다.
 
-- `S3`: early diastolic candidate region after `S2`
-- `S4`: late diastolic candidate region before the next `S1`
+- `S3`: `S2` 이후의 early diastolic candidate region
+- `S4`: 다음 `S1` 이전의 late diastolic candidate region
 
-These windows are deliberately constrained so the candidate search stays tied to
-physiologic position rather than arbitrary amplitude fluctuation.
+이 window는 의도적으로 제한되어 있으며, candidate search가 임의의 amplitude fluctuation이 아니라 생리학적으로 가능한 위치에 묶이도록 설계되어 있다.
 
-## Signal Basis
+## 신호 기반
 
-The candidate logic is driven primarily by amplitude behavior.
+candidate logic은 주로 amplitude behavior에 의해 결정된다.
 
-It does not currently depend on:
+현재는 다음 요소에 직접 의존하지 않는다.
 
 - ECG-confirmed timing
-- expert labels
+- expert label
 - pathology-grade adjudication
 
-The method is deliberately lightweight and review-oriented.
+즉, 이 방법은 의도적으로 lightweight하고 review-oriented하게 설계되어 있다.
 
-## Current Detection Philosophy
+## 현재 Detection 철학
 
-The current product interprets S3/S4 as:
+현재 제품은 S3/S4를 다음과 같이 해석한다.
 
-- low-confidence exploratory candidates
-- useful visual hypotheses
-- signals worthy of further inspection
+- low-confidence exploratory candidate
+- 의미 있을 수 있는 visual hypothesis
+- 추가 검토가 필요한 signal
 
-This allows the Tool to surface potentially meaningful regions without
-overstating certainty.
+이 접근은 Tool이 잠재적으로 의미 있는 구간을 사용자에게 보여주되, 확실성을 과장하지 않도록 해준다.
 
-## Rendering Style
+## Rendering 스타일
 
-S3 and S4 are visually distinct from S1 and S2.
+S3와 S4는 시각적으로 S1, S2와 구분되게 표시된다.
 
-Their purpose in the graph is to:
+graph에서 이들의 목적은 다음과 같다.
 
-- attract reviewer attention
-- remain visibly separate from the primary heart sounds
-- support quick toggling on and off
+- 검토자의 attention을 끌기
+- primary heart sound와 시각적으로 분리된 상태 유지
+- 빠르게 on/off 할 수 있도록 지원
 
-The rendering style is intentionally more alert-like than the normal sound-area
-overlay style.
+rendering style은 일반적인 sound-area overlay보다 더 alert-like한 느낌을 가지도록 의도되어 있다.
 
-## Interaction with Other Overlays
+## 다른 Overlay와의 관계
 
-S3/S4 are secondary overlays.
+S3/S4는 secondary overlay에 해당한다.
 
-They are layered on top of a graph that already contains:
+이들은 이미 다음 요소를 포함하고 있는 graph 위에 추가로 표시된다.
 
 - amplitude
 - S1 area
 - S2 area
 - cycle highlight
-- parameter annotations
+- parameter annotation
 
-This means their color and shape strategy must avoid confusion with the primary
-sound structure.
+따라서 이들의 color 및 shape 전략은 primary sound structure와 혼동되지 않도록 설계되어야 한다.
 
-## Toggle Behavior
+## Toggle 동작
 
-The current visualization model allows S3/S4 visibility to be controlled through
-the series-selection path.
+현재 visualization model에서는 S3/S4 visibility를 series-selection 경로를 통해 제어할 수 있다.
 
-This reflects an important design assumption:
+이 구조는 다음과 같은 중요한 설계 가정을 반영한다.
 
-- not every user wants candidate overlays visible all the time
+- 모든 사용자가 candidate overlay를 항상 보고 싶어하는 것은 아니다
 
-## Relation to Parameter Logic
+## Parameter Logic과의 관계
 
-At present, S3/S4 are visualization-driven candidate features.
+현재 S3/S4는 visualization 중심의 candidate feature이다.
 
-They are not currently part of the main parameter set exported in the
-HeartSound parameter sheet.
+이들은 현재 HeartSound parameter sheet의 main parameter set에 포함되어 export되지는 않는다.
 
-This separation is useful because:
+이러한 분리는 다음 이유에서 유용하다.
 
-- the main parameter set is currently designed around stable cycle anchors
-- S3/S4 are still exploratory
+- 현재 main parameter set은 안정적인 cycle anchor를 중심으로 설계되어 있다
+- S3/S4는 아직 exploratory 단계에 있다
 
-## Design Intent
+## 설계 의도
 
-The S3/S4 category exists to provide:
+S3/S4 카테고리는 다음을 제공하기 위해 존재한다.
 
-- structured exploratory guidance
-- visually clear secondary event candidates
-- future extension space for pathology-oriented review
+- 구조화된 exploratory guidance
+- 시각적으로 명확한 secondary event candidate
+- pathology-oriented review로 확장할 수 있는 여지
 
-It is not yet intended as a final clinical reporting layer.
+즉, 아직은 최종 clinical reporting layer를 목표로 하는 구조는 아니다.
 
 ## Core Files
 
-Representative files in this category include:
+이 카테고리와 관련된 대표 파일은 다음과 같다.
 
 - `frontend/src/App.tsx`
 - `backend/app/services/plot_data_service.py`
 
-## Future Expansion Notes
+## 향후 확장 메모
 
-Possible future work:
+향후 가능한 확장 방향은 다음과 같다.
 
 - candidate confidence scoring
-- parameterization of S3/S4 waveform features
-- export of candidate intervals
-- user confirmation workflows
+- S3/S4 waveform feature의 parameter화
+- candidate interval export
+- 사용자 확인 workflow
 - supervised follow-up validation
 
-## Summary
+## 요약
 
-The current S3/S4 structure is an exploratory candidate layer built on top of
-cycle-aware HeartSound timing.
+현재 S3/S4 구조는 cycle-aware HeartSound timing 위에 구축된 exploratory candidate layer이다.
 
-Its purpose is to help the user notice suspicious additional events while
-keeping them visually and conceptually distinct from confirmed S1/S2 structure.
+이 구조의 목적은 사용자가 의심스러운 추가 event를 인지할 수 있도록 돕되,  
+그 event를 확정된 S1/S2 구조와는 시각적·개념적으로 분리해서 유지하는 데 있다.

@@ -3,22 +3,22 @@ SHELL := /bin/bash
 .PHONY: dev stop health status code share stop-share
 
 dev:
-	./start
+	./bin/start
 
 stop:
-	./stop_dev.sh
+	./bin/stop_dev.sh
 
 health:
-	./health_dev.sh
+	./bin/health_dev.sh
 
 status:
-	./status_dev.sh
+	./bin/status_dev.sh
 
 code:
-	./code
+	./bin/code
 
 share:
-	./share
+	./bin/share
 
 stop-share:
-	./stop_share.sh
+	./bin/stop_share.sh

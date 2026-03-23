@@ -1,64 +1,62 @@
-# File Management Structure
+# 파일 관리 구조
 
-## Purpose
+## 목적
 
-This document describes how files are organized, uploaded, identified, linked,
-and consumed inside the Tool.
+이 문서는 Tool 내부에서 파일이 어떻게 구성되고, 업로드되며, 식별되고, 연결되고, 활용되는지를 설명한다.
 
-The goal of this category is to document the current file-role model that drives
-the rest of the application.
+이 카테고리의 목적은 애플리케이션 전반의 동작을 뒷받침하는 현재의 file-role model을 문서화하는 것이다.
 
-## Scope
+## 범위
 
-This category covers:
+이 카테고리에서 다루는 내용은 다음과 같다.
 
-- file roles
-- upload entry points
-- role-specific behavior
-- sidebar organization
-- panel assignment rules
-- auto-linking rules
-- metadata handling
+- file role
+- upload entry point
+- 역할별 동작 방식
+- sidebar 구성
+- panel 할당 규칙
+- auto-linking 규칙
+- metadata 처리
 
-This category does not cover:
+이 카테고리에서 다루지 않는 내용은 다음과 같다.
 
-- signal analysis formulas
+- signal analysis formula
 - graph rendering behavior
 - parameter card design
-- wave playback controls
+- wave playback control
 
-## Core File Role Model
+## 핵심 파일 역할 모델
 
-The current Tool distinguishes files by role.
+현재 Tool은 파일을 역할(role) 기준으로 구분한다.
 
-The active roles are:
+현재 활성화된 role은 다음과 같다.
 
 - `Data`
 - `Wave`
 - `Parameter`
 - `Unsupervised`
 
-Each role exists for a different functional purpose.
+각 role은 서로 다른 기능적 목적을 가진다.
 
 ## 1. Data
 
-### Purpose
+### 목적
 
-`Data` is the primary analytical input.
+`Data`는 가장 핵심적인 분석 입력 파일이다.
 
-For HeartSound:
+HeartSound의 경우:
 
-- `Data` contains the signal used for plotting
-- it contains RS-score columns used for S1/S2 event logic
-- it is the current source of derived parameter computation
+- `Data`는 plotting에 사용되는 signal을 포함한다
+- S1/S2 event logic에 사용되는 RS-score column을 포함한다
+- 현재 파생 parameter 계산의 기준 데이터 역할을 한다
 
-For ECG:
+ECG의 경우:
 
-- `Data` contains the raw signal and marker channels required for ECG plots
+- `Data`는 ECG plot에 필요한 raw signal과 marker channel을 포함한다
 
-### HeartSound Data Expectations
+### HeartSound Data 기대 형식
 
-HeartSound data files are expected to include columns such as:
+HeartSound data 파일은 일반적으로 다음과 같은 column을 포함해야 한다.
 
 - `Amplitude`
 - `S1-Start_RS_Score`
@@ -66,157 +64,155 @@ HeartSound data files are expected to include columns such as:
 - `S2-Start_RS_Score`
 - `S2-End_RS_Score`
 
-These columns drive both visualization and downstream cycle/parameter logic.
+이 column들은 시각화뿐 아니라 이후 cycle/parameter logic에도 사용된다.
 
 ## 2. Wave
 
-### Purpose
+### 목적
 
-`Wave` is the audio role.
+`Wave`는 오디오 역할을 담당하는 file role이다.
 
-It is used to:
+주요 용도는 다음과 같다.
 
-- attach a `.wav` file to a panel
-- support playback controls
-- synchronize playback position with the graph
+- panel에 `.wav` 파일 연결
+- playback control 지원
+- 그래프와 playback position 동기화
 
-### Accepted Format
+### 허용 형식
 
-The current implementation treats `Wave` as a `.wav` upload role.
+현재 구현에서는 `Wave` role을 `.wav` 업로드 역할로 처리한다.
 
-### Current UX Model
+### 현재 UX 모델
 
-Users do not upload wave files into the graph directly.
-Instead:
+사용자는 wave file을 그래프에 직접 업로드하지 않는다.  
+대신 다음과 같은 흐름으로 동작한다.
 
-- `Wave` files are listed in the sidebar
-- a file can be linked to a panel
-- playback controls activate when the panel has a linked wave source
+- `Wave` 파일은 sidebar에 표시된다
+- 해당 파일을 panel에 연결할 수 있다
+- panel에 linked wave source가 존재할 때 playback control이 활성화된다
 
 ## 3. Parameter
 
-### Current Role in the Product
+### 현재 제품 내 역할
 
-The `Parameter` role still exists in the file model, but its meaning differs by
-workspace.
+`Parameter` role은 현재도 file model 안에 존재하지만, 그 의미는 workspace에 따라 달라진다.
 
-For ECG:
+ECG의 경우:
 
-- parameter files remain a direct uploaded input
+- parameter file은 여전히 직접 업로드하는 입력 파일이다
 
-For HeartSound:
+HeartSound의 경우:
 
-- current derived parameter display is centered on `Data`
-- the application calculates parameter values directly from the HeartSound data
+- 현재의 derived parameter display는 `Data`를 중심으로 동작한다
+- 애플리케이션이 HeartSound data로부터 parameter 값을 직접 계산한다
 
-This means the role still exists structurally, but HeartSound no longer depends
-on uploaded parameter files for the main parameter window.
+즉, 구조적으로 `Parameter` role은 여전히 존재하지만, HeartSound에서는 메인 parameter window를 위해 별도의 parameter file 업로드에 직접 의존하지 않는다.
 
 ## 4. Unsupervised
 
-### Purpose
+### 목적
 
-`Unsupervised` files provide auxiliary analytical context.
+`Unsupervised` 파일은 보조적인 분석 맥락을 제공한다.
 
-They are used to:
+주요 용도는 다음과 같다.
 
-- link cluster-like or auxiliary summary information to a panel
-- support additional highlight and comparison workflows
+- cluster 형태 또는 보조 summary 정보를 panel에 연결
+- 추가적인 highlight 및 comparison workflow 지원
 
-This role remains separate from the core parameter pipeline.
+이 role은 핵심 parameter pipeline과는 분리된 채 유지된다.
 
-## Sidebar Structure
+## Sidebar 구조
 
-The left sidebar is the main file management surface.
+좌측 sidebar는 파일 관리의 주요 인터페이스이다.
 
-It is organized by:
+이 영역은 다음 기준으로 구성된다.
 
-- currently selected workspace
-- currently selected file role
-- upload action buttons
-- searchable file list
+- 현재 선택된 workspace
+- 현재 선택된 file role
+- upload action button
+- 검색 가능한 file list
 
-The user flow is:
+사용자 흐름은 다음과 같다.
 
-1. choose workspace
-2. choose file role
-3. upload files or inspect uploaded files
-4. click a file to assign or link it to a panel
+1. workspace 선택
+2. file role 선택
+3. 파일 업로드 또는 업로드된 파일 확인
+4. 파일을 클릭하여 특정 panel에 할당하거나 연결
 
-## File List Metadata
+## 파일 목록 Metadata
 
-Each file item exposes metadata appropriate to its role.
+각 파일 항목은 role에 맞는 metadata를 표시한다.
 
-Examples:
+예시는 다음과 같다.
 
-- `rows 57984` for tabular data files
-- `WAV` or extension-specific metadata for wave files
+- tabular data 파일의 경우 `rows 57984`
+- wave 파일의 경우 `WAV` 또는 확장자 기반 metadata
 
-This helps the user quickly distinguish analysis sources from audio sources.
+이 정보는 사용자가 분석용 데이터와 오디오 파일을 빠르게 구분하는 데 도움이 된다.
 
-## Upload Paths and Accepted Types
+## Upload 경로 및 허용 파일 형식
 
-Current upload patterns:
+현재 지원되는 upload 패턴은 다음과 같다.
 
-- tabular roles use `.csv` and `.xlsx`
-- wave role uses `.wav`
+- tabular role: `.csv`, `.xlsx`
+- wave role: `.wav`
 
-The UI also distinguishes between:
+또한 UI는 다음 업로드 방식을 구분한다.
 
 - single file upload
 - folder upload
 
-## Panel Assignment Model
+## Panel 할당 모델
 
-Files are not globally activated.
-They are panel-linked.
+파일은 전역적으로 활성화되지 않는다.  
+대신 panel 단위로 연결된다.
 
-This means:
+즉:
 
-- a `Data` file is assigned to a specific panel
-- `Wave`, `Parameter`, and `Unsupervised` can be linked to that same panel
-- different panels can hold different analysis contexts
+- 하나의 `Data` 파일은 특정 panel에 할당된다
+- `Wave`, `Parameter`, `Unsupervised` 파일은 같은 panel에 연결될 수 있다
+- 서로 다른 panel은 서로 다른 분석 맥락을 가질 수 있다
 
-This is important for side-by-side comparison mode.
+이 구조는 side-by-side comparison mode에서 특히 중요하다.
 
-## Auto-Linking Rules
+## Auto-Linking 규칙
 
-The product includes automatic linking behavior for compatible files.
+제품은 호환 가능한 파일들 사이에서 자동 연결(auto-linking) 동작을 지원한다.
 
-Current role pairing includes:
+현재 role pairing 예시는 다음과 같다.
 
 - `Data` -> matching `Wave`
-- `Data` -> matching linked analysis files where naming rules permit
+- `Data` -> naming rule이 맞는 linked analysis file
 
-The auto-linking logic relies on filename normalization.
+이 auto-linking logic은 filename normalization에 기반한다.
 
-For HeartSound, the current behavior is built around identifiers such as:
+HeartSound에서는 현재 다음과 같은 식별자를 중심으로 동작한다.
 
 - record number
 - valve/location token
 
-Example pattern:
+예시 패턴:
 
 - `85252_PV_RS_Score.xlsx`
 - `85252_PV.wav`
 
-These share the same sync key and are treated as corresponding resources.
+이 두 파일은 동일한 sync key를 공유하며, 대응되는 resource로 간주된다.
 
-## Workspace Awareness
+## Workspace 인식 구조
 
-File behavior is workspace-specific.
+파일 동작은 workspace별로 달라진다.
 
-HeartSound and ECG do not share identical expectations.
+HeartSound와 ECG는 동일한 기대 형식을 공유하지 않는다.
 
-The current file model adapts to:
+현재 file model은 다음 차이를 반영하도록 설계되어 있다.
 
-- different column schemas
-- different role meaning
-- different downstream consumers
+- 서로 다른 column schema
+- 서로 다른 role 의미
+- 서로 다른 downstream consumer
 
-## Metadata and Backend Registry
+## Metadata 및 Backend Registry
 
-Uploaded files are registered with metadata such as:
+업로드된 파일은 다음과 같은 metadata와 함께 등록된다.
 
 - `fileId`
 - original name
@@ -227,7 +223,7 @@ Uploaded files are registered with metadata such as:
 - row count
 - upload timestamp
 
-This registry is what powers:
+이 registry는 다음 기능의 기반이 된다.
 
 - file listing
 - plot data lookup
@@ -235,47 +231,45 @@ This registry is what powers:
 - export lookup
 - wave content serving
 
-## Deletion Surface
+## 삭제 인터페이스
 
-The sidebar includes a `Delete Files` action.
+Sidebar에는 `Delete Files` 기능도 포함되어 있다.
 
-This means file management is not only additive.
-The user can also remove uploaded assets through the current UI.
+즉, 현재 파일 관리는 단순히 파일을 추가하는 구조만이 아니라,  
+사용자가 현재 UI를 통해 업로드된 asset을 제거할 수 있는 구조이기도 하다.
 
-## Design Intent
+## 설계 의도
 
-The current file-management model is designed for:
+현재 file-management model은 다음 목적에 맞게 설계되어 있다.
 
-- multi-source research workflows
-- reproducible panel linkage
-- mixed signal and audio review
-- low-friction switching between cases
+- multi-source research workflow 지원
+- 재현 가능한 panel linkage
+- signal과 audio를 함께 검토하는 환경
+- case 전환을 빠르게 할 수 있는 low-friction workflow
 
-It is intentionally more explicit than a hidden background loader.
+이 구조는 숨겨진 background loader보다 의도적으로 더 명시적인 방식으로 설계되어 있다.
 
-## Current Constraints
+## 현재 제약 사항
 
-This system assumes:
+현재 시스템은 다음을 전제로 한다.
 
-- uploaded files conform to the expected schema per role
-- name-based auto-linking is strong enough for current datasets
-- a panel is the fundamental unit of file context
+- 업로드된 파일이 role별 기대 schema를 따른다
+- 이름 기반 auto-linking이 현재 dataset에서는 충분히 잘 동작한다
+- panel이 파일 맥락을 구성하는 기본 단위이다
 
-## Future Expansion Notes
+## 향후 확장 메모
 
-This category could later support:
+이 카테고리는 향후 다음과 같은 방향으로 확장될 수 있다.
 
-- richer folder semantics
+- 더 풍부한 folder semantic
 - batch case grouping
 - derived-file provenance
-- validation previews before upload
-- stronger mismatch warnings
+- 업로드 전 validation preview
+- 더 강한 mismatch warning
 
-## Summary
+## 요약
 
-The current file-management structure is a role-based, panel-linked, workspace-
-aware system that organizes all analytical inputs into a consistent operating
-model.
+현재 file-management structure는 role 기반, panel-linked, workspace-aware 구조이며,  
+모든 분석 입력을 일관된 운영 모델 안에서 관리한다.
 
-It is the data-ingestion layer that feeds plotting, audio playback, parameter
-generation, export, and auxiliary analysis.
+이 구조는 plotting, audio playback, parameter generation, export, 그리고 auxiliary analysis를 뒷받침하는 data-ingestion layer이다.

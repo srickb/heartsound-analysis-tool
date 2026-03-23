@@ -21,7 +21,7 @@
 - `backend/`: FastAPI + SQLite + pandas service
 - `docs/`: launcher guide and spec notes
 - `scripts/`: helper scripts used by the launcher
-- `start`, `code`, `stop_dev.sh`, `status_dev.sh`: shortest local entrypoints
+- `bin/`: local launcher entrypoints such as `start`, `code`, `stop_dev.sh`, and `status_dev.sh`
 
 ## Local Setup
 
@@ -46,38 +46,38 @@ npm install
 Start both frontend and backend:
 
 ```bash
-./start
+./bin/start
 ```
 
 Stop the local stack:
 
 ```bash
-./stop_dev.sh
+./bin/stop_dev.sh
 ```
 
 Check current status:
 
 ```bash
-./status_dev.sh
-./health_dev.sh
+./bin/status_dev.sh
+./bin/health_dev.sh
 ```
 
 Generate a 5-minute one-time access code:
 
 ```bash
-./code
+./bin/code
 ```
 
 Generate a public share URL:
 
 ```bash
-./share
+./bin/share
 ```
 
 Stop the share tunnel:
 
 ```bash
-./stop_share.sh
+./bin/stop_share.sh
 ```
 
 ## File Roles

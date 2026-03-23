@@ -1,221 +1,208 @@
-# Graph and Visualization Structure
+# Graph 및 Visualization 구조
 
-## Purpose
+## 목적
 
-This document describes how the Tool presents signal data visually.
+이 문서는 Tool이 signal data를 시각적으로 어떻게 표현하는지를 설명한다.
 
-The graph is the main analysis surface of the product.
-It combines raw signal display, overlays, cycle highlighting, parameter-linked
-annotations, and audio-synchronized playback state.
+graph는 이 제품의 핵심 분석 화면이다.  
+이 영역은 raw signal display, overlay, cycle highlight, parameter-linked annotation, 그리고 audio-synchronized playback state를 함께 제공한다.
 
-## Scope
+## 범위
 
-This category covers:
+이 카테고리에서 다루는 내용은 다음과 같다.
 
-- plotted signal layers
-- default graph visibility
-- detail modal series control
+- plotted signal layer
+- 기본 graph visibility
+- detail modal의 series control
 - overlay rendering
-- legend behavior
+- legend 동작
 - cycle highlight rendering
 - parameter-linked measurement annotation
 
-This category does not cover:
+이 카테고리에서 다루지 않는 내용은 다음과 같다.
 
 - file upload logic
-- parameter formulas
-- auth/share behavior
+- parameter formula
+- auth/share 동작
 
-## Core Graph Model
+## 핵심 Graph 모델
 
-The Tool renders a primary graph per panel.
+Tool은 panel마다 하나의 primary graph를 렌더링한다.
 
-For HeartSound, the graph is built around:
+HeartSound의 경우 graph는 다음 요소를 중심으로 구성된다.
 
 - amplitude waveform
-- RS-score-derived overlays
-- candidate highlights
+- RS-score 기반 overlay
+- candidate highlight
 - playback-linked playhead
 
-For ECG, the graph has a different marker structure, but the graph container
-model remains similar.
+ECG의 경우 marker 구조는 다르지만, graph container 자체의 모델은 유사하게 유지된다.
 
-## Default Visible Layers
+## 기본 표시 Layer
 
-For the HeartSound workspace, the current default visible state prioritizes a
-clean review setup.
+HeartSound workspace에서는 현재 기본 visible state가 깔끔한 review 환경을 우선하도록 설정되어 있다.
 
-The baseline visual configuration includes:
+기본 시각화 구성은 다음과 같다.
 
 - `Amplitude`
 - `S1 Area`
 - `S2 Area`
-- `Parameter` window enabled
+- `Parameter` window 활성화
 
-This is meant to reduce clutter while keeping the most clinically useful timing
-structure visible.
+이 기본 설정은 불필요한 복잡도를 줄이면서도, 임상적으로 의미 있는 주요 timing structure를 유지하는 것을 목표로 한다.
 
 ## Detail Modal
 
-Additional visual layers are controlled through the `Detail` modal.
+추가적인 visual layer는 `Detail` modal을 통해 제어된다.
 
-This modal acts as the series management interface.
+이 modal은 series 관리 인터페이스 역할을 한다.
 
-It currently supports:
+현재 지원 기능은 다음과 같다.
 
-- turning individual layers on or off
-- `All` selection at the top
-- restoring default state through the panel-level `Default` action
+- 개별 layer on/off
+- 상단의 `All` 선택
+- panel 단위 `Default` action을 통한 기본 상태 복원
 
-## Series Visibility Philosophy
+## Series Visibility 설계 방향
 
-The graph tries to separate:
+graph는 다음 두 요소를 구분하려고 설계되어 있다.
 
 - essential context
 - optional detail
 
-This matters because Heartsound review becomes unreadable when too many score
-channels and overlays are shown at the same time.
+이 구분이 중요한 이유는, Heartsound review에서 너무 많은 score channel과 overlay를 동시에 표시하면 화면 해석이 어려워지기 때문이다.
 
-## S1/S2 Area Overlays
+## S1/S2 Area Overlay
 
-The graph currently displays:
+현재 graph는 다음 영역을 표시한다.
 
 - `S1 Area`
 - `S2 Area`
 
-These are rendered as semi-transparent interval overlays corresponding to the
-detected S1 and S2 sound regions.
+이 영역들은 감지된 S1, S2 sound region에 해당하는 semi-transparent interval overlay로 렌더링된다.
 
-Their role is to provide:
+이들의 역할은 다음과 같다.
 
-- beat-structure context
-- parameter anchor visibility
-- cycle interpretation support
+- beat structure 맥락 제공
+- parameter anchor 가시성 확보
+- cycle 해석 지원
 
-## S3/S4 Candidate Overlays
+## S3/S4 Candidate Overlay
 
-The graph also supports candidate-level extra markings for:
+graph는 후보 수준의 추가 표시로 다음 항목도 지원한다.
 
 - `S3`
 - `S4`
 
-These are not definitive labels.
-They are visual candidate regions intended for exploratory review.
+이들은 확정된 label이 아니다.  
+탐색적 검토를 위한 visual candidate region으로 사용된다.
 
-Current rendering intent:
+현재 rendering 의도는 다음과 같다.
 
-- clearly distinguishable from S1/S2
-- high-visibility highlighting
-- separate toggle behavior through series controls
+- S1/S2와 명확히 구분되도록 표시
+- 시인성이 높은 highlight 제공
+- series control에서 별도로 toggle 가능하도록 구성
 
 ## Cycle Highlight Overlay
 
-When cycle highlighting is enabled, the selected cycle is also rendered on the
-graph.
+cycle highlight가 활성화되면, 선택된 cycle도 graph 위에 함께 표시된다.
 
-Its role is to show:
+이 기능의 역할은 다음과 같다.
 
-- which exact cycle the parameter window is currently describing
-- how the selected cycle aligns with the visible signal range
+- 현재 parameter window가 정확히 어떤 cycle을 설명하는지 보여줌
+- 선택된 cycle이 현재 visible signal range와 어떻게 맞물리는지 보여줌
 
-This is critical for connecting metric interpretation to the waveform.
+이 기능은 metric 해석을 waveform과 연결하는 데 매우 중요하다.
 
-## Parameter-Driven Annotation Layer
+## Parameter 기반 Annotation Layer
 
-When a parameter card is clicked, the graph displays an annotation showing where
-that metric came from.
+parameter card를 클릭하면, 해당 metric이 어떤 구간에서 계산되었는지를 graph 위에 annotation으로 표시한다.
 
-Examples:
+예시는 다음과 같다.
 
-- S1 metrics highlight the S1 segment
-- S2 metrics highlight the S2 segment
-- S1-S2 metrics highlight the S1 end to S2 start gap
-- S2-S1 metrics highlight the S2 end to next S1 start gap
-- HR highlights the current cycle span
-- RS peak metrics show event points
-- RS width metrics show the contiguous half-height region
+- S1 metric은 S1 segment를 강조
+- S2 metric은 S2 segment를 강조
+- S1-S2 metric은 S1 end부터 S2 start까지의 gap을 강조
+- S2-S1 metric은 S2 end부터 다음 S1 start까지의 gap을 강조
+- HR은 현재 cycle span을 강조
+- RS peak metric은 event point를 표시
+- RS width metric은 contiguous half-height region을 표시
 
-This turns the parameter area into an interactive explainer rather than a static
-table.
+이 구조 덕분에 parameter 영역은 단순한 정적 표가 아니라, 해석을 돕는 interactive explainer 역할을 하게 된다.
 
-## Legend Behavior
+## Legend 동작
 
-The graph includes a compact legend-like explanation area in the upper-right
-corner.
+graph 우측 상단에는 compact한 legend 형태의 설명 영역이 포함되어 있다.
 
-Current legend design principles:
+현재 legend 설계 원칙은 다음과 같다.
 
-- only show what is currently relevant
-- avoid listing everything all the time
-- do not repeat unnecessary entries
+- 현재 relevant한 정보만 표시
+- 항상 모든 항목을 나열하지 않음
+- 불필요한 항목은 반복하지 않음
 
-This helps preserve space for the actual waveform.
+이 방식은 실제 waveform을 위한 화면 공간을 보존하는 데 도움이 된다.
 
-## Navigator and Viewport
+## Navigator 및 Viewport
 
-The graph works within a visible range window rather than always showing the
-entire record at once.
+graph는 항상 전체 record를 한 번에 보여주지 않고, visible range window 안에서 동작한다.
 
-This allows:
+이 구조를 통해 다음이 가능해진다.
 
-- detailed local inspection
-- manageable performance on large records
-- playback-linked viewport transitions
+- 국소 구간의 상세 검토
+- 큰 record에서도 관리 가능한 성능 유지
+- playback과 연동된 viewport 전환
 
-The current view range is shown in the UI as row boundaries.
+현재 view range는 UI에서 row boundary 형태로 표시된다.
 
 ## Graph Navigation
 
-Users can move through the graph using:
+사용자는 다음 방법으로 graph를 이동할 수 있다.
 
-- panel range controls
-- keyboard shortcuts
+- panel range control
+- keyboard shortcut
 - cycle selection
-- playback controls
+- playback control
 
-The viewport is not static.
-It responds to interaction context.
+즉, viewport는 고정되어 있지 않고 interaction context에 따라 반응한다.
 
-## Design Goals
+## 설계 목표
 
-The current graph structure is designed to balance:
+현재 graph 구조는 다음 요소들 사이의 균형을 목표로 한다.
 
 - signal readability
 - clinical/event interpretability
 - interactivity
 - performance
 
-It is intentionally more review-oriented than purely presentation-oriented.
+즉, 단순한 presentation보다는 실제 review workflow에 더 적합하도록 설계되어 있다.
 
 ## Core Files
 
-Representative files in this category include:
+이 카테고리와 관련된 대표 파일은 다음과 같다.
 
 - `frontend/src/App.tsx`
 - `frontend/src/styles.css`
 
-## Future Expansion Notes
+## 향후 확장 메모
 
-Potential future work:
+향후 가능한 확장 방향은 다음과 같다.
 
-- denser legend customization
-- pinned annotations
-- waveform bookmarks
-- more advanced cycle comparison overlays
-- optional mini-map / overview control refinement
+- 더 세밀한 legend customization
+- pinned annotation
+- waveform bookmark
+- 더 고도화된 cycle comparison overlay
+- optional mini-map / overview control 개선
 
-## Summary
+## 요약
 
-The graph structure is the visual analysis engine of the Tool.
+graph 구조는 Tool의 시각적 분석 엔진에 해당한다.
 
-It combines:
+이 구조는 다음 요소를 결합한다.
 
-- raw signal presentation
-- event-area overlays
-- candidate highlighting
-- parameter-linked explanations
+- raw signal 표현
+- event-area overlay
+- candidate highlight
+- parameter-linked explanation
 - viewport-aware interaction
 
-This is the category that most directly turns computed logic into interpretable
-visual review.
+즉, 이 카테고리는 계산된 로직을 사용자가 해석 가능한 시각적 검토 형태로 가장 직접적으로 바꿔주는 영역이다.

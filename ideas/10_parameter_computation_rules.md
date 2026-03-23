@@ -1,44 +1,41 @@
-# Parameter Computation Rules
+# Parameter Computation Rule
 
-## Purpose
+## 목적
 
-This document explains the computational rules that govern the current
-HeartSound parameter system.
+이 문서는 현재 HeartSound parameter system을 지배하는 계산 규칙을 설명한다.
 
-It is not a line-by-line formula reference.
-Instead, it records the rule system that makes the formulas internally
-consistent.
+이 문서는 formula를 한 줄씩 나열하는 reference가 아니다.  
+대신 현재 formula들이 내부적으로 일관되게 동작하도록 만드는 rule system을 정리하는 데 목적이 있다.
 
-## Scope
+## 범위
 
-This category covers:
+이 카테고리에서 다루는 내용은 다음과 같다.
 
-- sampling assumptions
-- index semantics
-- interval semantics
-- unit rules
-- invalid-case handling
+- sampling 가정
+- index 의미
+- interval 의미
+- unit 규칙
+- invalid case 처리
 - cycle dependency
-- RS parameter computation rules
+- RS parameter 계산 규칙
 
-This category does not replace the dedicated formula reference document.
+이 문서는 formula reference 전용 문서를 대체하지 않는다.
 
-## Core Signal Assumptions
+## 핵심 Signal 가정
 
-The current HeartSound parameter pipeline assumes:
+현재 HeartSound parameter pipeline은 다음을 가정한다.
 
 - sample rate = `4000 Hz`
-- therefore `1 sample = 0.25 ms`
+- 따라서 `1 sample = 0.25 ms`
 - signal amplitude unit = `mV`
 
-These assumptions are used across all current derived HeartSound parameter
-families.
+이 가정들은 현재 구현된 모든 HeartSound derived parameter family에 공통으로 적용된다.
 
-## Index Semantics
+## Index 의미
 
-The current system treats event locations as sample indices.
+현재 시스템은 event location을 sample index로 취급한다.
 
-Examples:
+예시는 다음과 같다.
 
 - `S1_start`
 - `S1_end`
@@ -46,138 +43,133 @@ Examples:
 - `S2_end`
 - `next_S1_start`
 
-These are not time values by themselves.
-They become time values only after sample-to-time conversion.
+이 값들은 그 자체로 time value가 아니다.  
+sample-to-time conversion이 이루어져야만 시간값이 된다.
 
-## Interval Semantics
+## Interval 의미
 
-The system uses half-open interval semantics for signal slicing:
+시스템은 signal slicing에 half-open interval semantics를 사용한다.
 
 - `[start, end)`
 
-This means:
+이는 다음을 의미한다.
 
-- the start sample is included
-- the end sample is excluded
+- start sample은 포함된다
+- end sample은 포함되지 않는다
 
-This rule is important because it keeps slicing behavior consistent across
-segment parameters and gap parameters.
+이 규칙은 segment parameter와 gap parameter 전반에서 slicing 동작을 일관되게 유지하는 데 중요하다.
 
-## Cycle Dependency Rule
+## Cycle Dependency 규칙
 
-Most HeartSound parameters are not global-record statistics.
-They are cycle-local metrics.
+대부분의 HeartSound parameter는 record 전체에 대한 global statistic이 아니다.  
+이들은 cycle-local metric이다.
 
-That means the current parameter set depends on:
+즉, 현재 parameter set은 다음에 의존한다.
 
-- a valid current cycle
-- valid S1 and S2 anchors inside that cycle
-- a valid next S1 anchor when required
+- 유효한 current cycle
+- 해당 cycle 내부의 유효한 S1 및 S2 anchor
+- 필요한 경우 유효한 next S1 anchor
 
-If those anchors are missing or invalid, the system prefers `NaN` rather than a
-fake numeric default.
+이 anchor가 없거나 유효하지 않으면, 시스템은 가짜 숫자 기본값을 넣기보다 `NaN`을 우선 사용한다.
 
-## Invalid Value Policy
+## Invalid Value 정책
 
-The current parameter system uses:
+현재 parameter system은 계산 불가능한 경우 다음을 사용한다.
 
-- `NaN` for not computable
+- `NaN`
 
-It avoids:
+다음과 같은 방식은 피한다.
 
-- coercing invalid cases to `0`
+- invalid case를 `0`으로 강제 변환
 
-This is important because zero could be misread as a valid physical result.
+이 점이 중요한 이유는, `0`이 실제로는 유효한 물리량 결과처럼 오해될 수 있기 때문이다.
 
-## Unit Rules
+## Unit 규칙
 
-The current unit policy is:
+현재 unit 정책은 다음과 같다.
 
-- durations and middle positions -> `ms`
-- amplitude magnitude summaries -> `mV`
-- area-like absolute integrals -> `mV·ms`
-- energy-like quantities -> `mV²·ms`
-- centroid balance values -> `%`
+- duration 및 middle position -> `ms`
+- amplitude magnitude summary -> `mV`
+- area 계열 absolute integral -> `mV·ms`
+- energy 계열 quantity -> `mV²·ms`
+- centroid balance value -> `%`
 - HR -> `bpm`
 - RS peak -> `RS score`
 - RS width -> `ms`
 
-These rules define the interpretive surface of the parameter cards.
+이 규칙들은 parameter card가 사용자에게 전달하는 해석 표면을 정의한다.
 
-## Sound-Internal Parameter Rules
+## Sound-Internal Parameter 규칙
 
-Parameters inside `S1` and `S2` are computed from the sound interval itself.
+`S1`과 `S2` 내부 parameter는 해당 sound interval 자체로부터 계산된다.
 
-Typical rules include:
+대표적인 규칙은 다음과 같다.
 
-- use only the samples inside the sound interval
-- use absolute value when measuring magnitude concentration
-- use RMS for energy-like amplitude concentration
-- use midpoint for `Middle`
-- use weighted distribution logic for centroid balance
+- sound interval 내부 sample만 사용한다
+- magnitude concentration을 측정할 때는 absolute value를 사용한다
+- energy 성격의 amplitude concentration에는 RMS를 사용한다
+- `Middle`에는 midpoint를 사용한다
+- centroid balance에는 weighted distribution logic을 사용한다
 
-## Gap Parameter Rules
+## Gap Parameter 규칙
 
-The current `S1-S2` and `S2-S1` metrics are gap-based.
+현재 `S1-S2` 및 `S2-S1` metric은 gap 기반이다.
 
-This means:
+이는 다음을 의미한다.
 
-- `S1-S2` metrics use `S1 end -> S2 start`
-- `S2-S1` metrics use `S2 end -> next S1 start`
+- `S1-S2` metric은 `S1 end -> S2 start`를 사용한다
+- `S2-S1` metric은 `S2 end -> next S1 start`를 사용한다
 
-These are not sound-body metrics.
-They describe between-sound intervals.
+즉, 이 metric들은 sound body 자체를 설명하는 것이 아니라, sound 사이의 interval을 설명한다.
 
-## Centroid Rules
+## Centroid 규칙
 
-The centroid values are not geometric centers.
-They describe weighted balance within the sound interval.
+centroid value는 단순한 geometric center가 아니다.  
+이는 sound interval 내부의 weighted balance를 설명한다.
 
-Current interpretation rule:
+현재 해석 규칙은 다음과 같다.
 
-- `S*_s Centroid` and `S*_e Centroid` together describe how much the energy
-  distribution leans toward the start or the end
+- `S*_s Centroid`와 `S*_e Centroid`는 함께 보았을 때, energy distribution이 시작 쪽과 끝 쪽 중 어디로 더 기울어져 있는지를 설명한다
 
-The current intended interpretation is complementary balance across the sound.
+즉, 현재 의도된 해석은 sound 내부에서의 상보적 balance를 보는 것이다.
 
-## HR Rule
+## HR 규칙
 
-The current heart-rate rule is cycle-based:
+현재 heart-rate 규칙은 cycle 기반이다.
 
-- use `current S1 start -> next S1 start`
-- convert that cycle span to bpm
+- `current S1 start -> next S1 start`를 사용한다
+- 이 cycle span을 bpm으로 변환한다
 
-This makes HR a cycle-local rhythm context value rather than a record-wide
-average.
+즉, HR은 record 전체 평균값이 아니라 cycle-local rhythm context value로 해석된다.
 
-## RS Peak Rule
+## RS Peak 규칙
 
-`RS Peak` is defined by:
+`RS Peak`는 다음과 같이 정의된다.
 
-- taking the final selected event point
-- reading the RS score at exactly that event point
+- 최종 선택된 event point를 기준으로 한다
+- 정확히 그 event point에서의 RS score 값을 읽는다
 
-The current display policy rounds these values to integer form because RS score
-is interpreted as a discrete event-strength scale.
+현재 display 정책에서는 이 값을 정수 형태로 반올림해 보여준다.  
+이는 RS score를 이산적인 event-strength scale로 해석하기 때문이다.
 
-## RS Width Rule
+## RS Width 규칙
 
-The current `RS Width` logic is event-centered.
+현재 `RS Width` logic은 event-centered 방식이다.
 
-It does not use the entire RS signal globally.
+이는 전체 RS signal을 전역적으로 사용하는 방식이 아니다.
 
-Instead it:
+대신 다음 절차를 따른다.
 
-- starts at the selected event peak
-- uses that peak’s local height
-- expands left and right while the RS score remains above half-height
-- converts the resulting span into `ms`
+- 선택된 event peak에서 시작한다
+- 해당 peak의 local height를 기준으로 삼는다
+- RS score가 half-height 이상인 동안 좌우로 확장한다
+- 최종 span을 `ms`로 변환한다
 
-So the width is a local event spread rule, not a record-level spread rule.
+즉, 이 width는 record-level spread가 아니라 local event spread를 나타내는 규칙이다.
 
-## Consistency Rule
+## Consistency 규칙
 
-A major principle of the current parameter system is consistency between:
+현재 parameter system의 중요한 원칙 중 하나는 다음 요소들 사이의 일관성이다.
 
 - graph structure
 - cycle structure
@@ -185,40 +177,36 @@ A major principle of the current parameter system is consistency between:
 - annotation display
 - export output
 
-This matters because a parameter is only trustworthy if it points back to the
-same structural anchors everywhere in the product.
+이 원칙이 중요한 이유는, 하나의 parameter가 제품 전체에서 동일한 structural anchor를 기준으로 가리킬 때만 신뢰할 수 있기 때문이다.
 
-## Design Intent
+## 설계 의도
 
-The current computation rules aim to be:
+현재 계산 규칙은 다음 특성을 목표로 한다.
 
 - stable
 - interpretable
 - cycle-specific
-- conservative in failure cases
+- failure case에서 보수적으로 동작하는 구조
 
-This is more important to the Tool than squeezing in large numbers of unstable
-derived features.
+즉, 불안정한 derived feature를 많이 추가하는 것보다, 안정적이고 해석 가능한 구조를 유지하는 것이 이 Tool에 더 중요하다.
 
-## Related Reference
+## 관련 Reference
 
-For exact parameter-by-parameter formulas, see:
+정확한 parameter별 formula는 다음 문서를 참고한다.
 
 - `process/heartsound_parameter_formula_reference.md`
 
-This document should be read as the rule system behind that formula sheet.
+이 문서는 해당 formula sheet의 배경이 되는 rule system으로 읽는 것이 적절하다.
 
-## Summary
+## 요약
 
-The current HeartSound computation rules define a consistent parameter system
-built on:
+현재 HeartSound computation rule은 다음 기반 위에서 일관된 parameter system을 정의한다.
 
-- fixed sample-rate interpretation
+- 고정된 sample-rate 해석
 - cycle-local segmentation
-- half-open intervals
-- explicit unit handling
-- `NaN` for invalid cases
+- half-open interval
+- 명시적인 unit handling
+- invalid case에 대한 `NaN` 처리
 - event-centered RS measurement
 
-These rules keep the Tool internally coherent across UI, export, and graph
-interaction.
+이 규칙들은 UI, export, graph interaction 전반에서 Tool의 내부 일관성을 유지해준다.

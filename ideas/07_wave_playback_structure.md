@@ -1,186 +1,184 @@
-# Wave Playback Structure
+# Wave Playback 구조
 
-## Purpose
+## 목적
 
-This document explains how wave playback is attached to a panel and how audio
-playback interacts with the graph.
+이 문서는 wave playback이 panel에 어떻게 연결되고, audio playback이 graph와 어떻게 상호작용하는지를 설명한다.
 
-Wave playback is not a standalone media feature.
-It is a synchronized review aid for the active HeartSound panel.
+wave playback은 독립적인 media 기능이 아니다.  
+이는 활성 HeartSound panel을 위한 synchronized review aid이다.
 
-## Scope
+## 범위
 
-This category covers:
+이 카테고리에서 다루는 내용은 다음과 같다.
 
 - wave file linking
-- playback controls
-- playhead behavior
+- playback control
+- playhead 동작
 - drag interaction
 - viewport synchronization
 - speed control
-- reset/end behavior
+- reset 및 종료 시 동작
 
-This category does not cover:
+이 카테고리에서 다루지 않는 내용은 다음과 같다.
 
-- upload registry details
-- parameter extraction formulas
+- upload registry 세부 구조
+- parameter extraction formula
 - share/auth runtime
 
-## Wave as a Panel-Linked Resource
+## Panel에 연결되는 Wave Resource
 
-A wave file is linked to a panel rather than globally opened.
+wave file은 전역적으로 열리는 것이 아니라 panel에 연결된다.
 
-This means:
+즉, 다음과 같은 구조를 가진다.
 
-- each panel can have its own wave context
-- playback controls act on the panel’s linked wave
-- the graph and audio relationship is panel-specific
+- 각 panel은 자신만의 wave context를 가질 수 있다
+- playback control은 해당 panel에 연결된 wave를 기준으로 동작한다
+- graph와 audio의 관계도 panel별로 독립적이다
 
-## Playback Control Set
+## Playback Control 구성
 
-The current playback control group includes:
+현재 playback control 그룹에는 다음 기능이 포함된다.
 
-- jump back 5 seconds
-- play / pause
-- jump forward 5 seconds
-- reset to 0 seconds
-- slow playback speed control
+- 5초 뒤로 이동
+- 재생 / 일시정지
+- 5초 앞으로 이동
+- 0초로 reset
+- 느린 재생 속도 조절
 
-These controls are placed in the panel header and are intended to be quick,
-high-frequency review tools.
+이 control들은 panel header에 배치되어 있으며,  
+짧고 자주 사용하는 review 도구로 설계되어 있다.
 
-## Play / Pause Behavior
+## Play / Pause 동작
 
-The central play control changes icon depending on state.
+중앙의 play control은 현재 상태에 따라 icon이 바뀐다.
 
-Behavior:
+동작 방식은 다음과 같다.
 
-- when stopped, it shows play
-- when playing, it shows pause
+- 정지 상태에서는 play icon 표시
+- 재생 중에는 pause icon 표시
 
-This mirrors familiar media-control interaction patterns.
+이 방식은 일반적인 media-control interaction 패턴을 따른다.
 
-## Jump Controls
+## Jump Control
 
 ### `-5 sec`
 
-Moves the current playback position backward by five seconds.
+현재 playback position을 5초 뒤로 이동시킨다.
 
 ### `+5 sec`
 
-Moves the current playback position forward by five seconds.
+현재 playback position을 5초 앞으로 이동시킨다.
 
 ### Reset
 
-Resets playback to the beginning of the linked wave.
+playback을 연결된 wave의 시작 지점으로 되돌린다.
 
-Important current behavior:
+현재 중요한 동작은 다음과 같다.
 
-- graph position also follows reset behavior
+- graph 위치도 reset 동작을 함께 따른다
 
 ## Speed Control
 
-The playback speed control currently emphasizes slower-than-normal review.
+현재 playback speed control은 normal speed보다 느린 review를 특히 강조한다.
 
-The current design focuses on:
+현재 설계는 다음에 초점을 둔다.
 
 - normal speed
-- slower stepped playback modes
+- 단계적으로 느리게 재생하는 mode
 
-This is useful for acoustic detail inspection.
+이는 acoustic detail을 자세히 확인할 때 유용하다.
 
 ## Playhead
 
-The graph displays a playhead corresponding to the current audio time.
+graph에는 현재 audio time에 대응하는 playhead가 표시된다.
 
-The playhead is rendered as:
+playhead는 다음 형태로 렌더링된다.
 
-- vertical bar
-- circular handle at the top
+- 세로 막대
+- 상단의 원형 handle
 
-This creates a clear visual marker for the active playback position.
+이 구조는 현재 재생 위치를 명확하게 보여주는 시각적 marker 역할을 한다.
 
 ## Drag Interaction
 
-The playhead handle can be dragged by the user.
+사용자는 playhead handle을 직접 drag할 수 있다.
 
-This means:
+즉, 다음 의미를 가진다.
 
-- the graph is not just passively following audio
-- the user can scrub audio directly from the waveform context
+- graph는 단순히 audio를 수동적으로 따라가기만 하지 않는다
+- 사용자가 waveform 맥락 안에서 직접 audio를 scrub할 수 있다
 
-Dragging updates the audio position and the graph state together.
+drag 동작은 audio position과 graph state를 함께 업데이트한다.
 
 ## Graph Synchronization
 
-The wave system is tightly coupled to the graph viewport.
+wave system은 graph viewport와 강하게 연결되어 있다.
 
-Current synchronization behaviors include:
+현재 동기화 동작에는 다음이 포함된다.
 
-- playback updates the playhead position on the graph
-- stepping controls move the graph when necessary
-- reset moves both audio and graph back to the start
-- if the playhead exits the visible range, the graph can advance
+- playback이 graph 위의 playhead position을 업데이트한다
+- step control이 필요 시 graph도 함께 이동시킨다
+- reset 시 audio와 graph가 모두 시작 지점으로 돌아간다
+- playhead가 visible range를 벗어나면 graph가 함께 앞으로 진행될 수 있다
 
-This makes wave review spatially meaningful.
+이 구조 덕분에 wave review는 공간적으로 의미 있는 해석이 가능해진다.
 
-## End-of-Playback Behavior
+## Playback 종료 시 동작
 
-When playback reaches the end:
+playback이 끝에 도달하면 다음과 같이 동작한다.
 
-- the audio returns to the beginning
-- the graph is also restored to the initial viewing region
+- audio는 다시 시작 지점으로 돌아간다
+- graph도 초기 viewing region으로 복원된다
 
-This keeps the visual state consistent with playback state.
+즉, playback state와 visual state가 일관되게 유지된다.
 
-## Current Design Goal
+## 현재 설계 목표
 
-Wave playback is designed as:
+wave playback은 다음과 같은 기능으로 설계되어 있다.
 
-- a review synchronization feature
-- not a generic media player
+- review synchronization feature
+- 일반적인 media player가 아님
 
-The product intent is to let the user hear what is being visually analyzed.
+제품의 의도는 사용자가 시각적으로 분석하고 있는 내용을 실제로 들을 수 있게 하는 데 있다.
 
-## Relation to Heartsound Review
+## HeartSound Review와의 관계
 
-Wave playback is especially valuable because it creates direct alignment between:
+wave playback은 특히 다음 요소를 직접 정렬해준다는 점에서 중요하다.
 
-- the plotted signal
-- the cycle structure
-- the area overlays
-- the parameter interpretation workflow
+- plotted signal
+- cycle structure
+- area overlay
+- parameter interpretation workflow
 
-This is one of the most distinctive parts of the current Tool.
+이 부분은 현재 Tool에서 가장 특징적인 요소 중 하나이다.
 
 ## Core Files
 
-Representative files in this category include:
+이 카테고리와 관련된 대표 파일은 다음과 같다.
 
 - `frontend/src/App.tsx`
 - `frontend/src/styles.css`
 - `backend/app/main.py`
 
-## Future Expansion Notes
+## 향후 확장 메모
 
-Possible next steps:
+향후 가능한 확장 방향은 다음과 같다.
 
-- waveform/audio bidirectional snapping
-- exact time readout display
-- cue points
-- repeat segment playback
-- export of reviewed playback ranges
+- waveform/audio 양방향 snapping
+- 정확한 시간 readout 표시
+- cue point
+- 특정 구간 반복 재생
+- 검토한 playback range export
 
-## Summary
+## 요약
 
-The current wave playback structure turns the graph into an audio-synchronized
-inspection surface.
+현재 wave playback 구조는 graph를 audio-synchronized inspection surface로 바꿔주는 역할을 한다.
 
-It provides:
+이 구조는 다음 기능을 제공한다.
 
-- panel-specific audio linkage
-- transport controls
-- draggable playhead review
+- panel별 audio linkage
+- transport control
+- draggable playhead 기반 review
 - graph-aware playback movement
 
-This category is essential for acoustic interpretation workflows.
+즉, 이 카테고리는 acoustic interpretation workflow에 핵심적인 역할을 한다.
