@@ -48,36 +48,33 @@ ECG_RAW_SCALE = 1 / 3
 HEARTSOUND_SAMPLE_RATE = 4000.0
 HEARTSOUND_SAMPLE_MS = 1000.0 / HEARTSOUND_SAMPLE_RATE
 HEARTSOUND_S1_PARAMETER_COLUMNS = [
-    "S1_Duration_ms",
+    "S1_Width_ms",
     "S1_Peak_mV",
     "S1_mean_mV",
     "S1_RMS_mV",
     "S1_Area_mVms",
-    "S1_Middle_ms",
-    "S1_S_centroid_pct",
-    "S1_E_centroid_pct",
+    "S1_Sumation",
 ]
 HEARTSOUND_S2_PARAMETER_COLUMNS = [
-    "S2_Duration_ms",
+    "S2_Width_ms",
     "S2_Peak_mV",
     "S2_mean_mV",
     "S2_RMS_mV",
     "S2_Area_mVms",
-    "S2_Middle_ms",
-    "S2_S_centroid_pct",
-    "S2_E_centroid_pct",
+    "S2_Sumation",
 ]
 HEARTSOUND_RELATION_PARAMETER_COLUMNS = [
-    "S1S2_Duration_ms",
-    "S1S2_Peak_mV",
-    "S1S2_mean_mV",
-    "S1S2_Energy_mV2ms",
+    "Systole_Duration_ms",
+    "Systole_Peak_mV",
+    "Systole_mean_mV",
 ]
 HEARTSOUND_NEXT_RELATION_PARAMETER_COLUMNS = [
-    "S2S1_Duration_ms",
-    "S2S1_Peak_mV",
-    "S2S1_mean_mV",
-    "S2S1_Energy_mV2ms",
+    "Diastole_Duration_ms",
+    "Diastole_Peak_mV",
+    "Diastole_mean_mV",
+    "Diastole_S3_Expected_Delta_mV",
+    "Diastole_NaN_Gap_Delta_mV",
+    "Diastole_S4_Expected_Delta_mV",
 ]
 HEARTSOUND_RS_PEAK_PARAMETER_COLUMNS = [
     "S1S_RS_Peak",
@@ -90,6 +87,12 @@ HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS = [
     "S1E_RS_Width_ms",
     "S2S_RS_Width_ms",
     "S2E_RS_Width_ms",
+]
+HEARTSOUND_RS_SUMATION_PARAMETER_COLUMNS = [
+    "S1S_RS_Sumation",
+    "S1E_RS_Sumation",
+    "S2S_RS_Sumation",
+    "S2E_RS_Sumation",
 ]
 HEARTSOUND_HEART_RATE_COLUMNS = [
     "HeartRate_bpm",
@@ -108,10 +111,10 @@ HEARTSOUND_DERIVED_GROUP_METADATA: dict[str, dict[str, str]] = {
         "label": "S2",
     },
     "s1_s2_relation": {
-        "label": "S1-S2",
+        "label": "Systole",
     },
     "s2_s1_relation": {
-        "label": "S2-S1",
+        "label": "Diastole",
     },
     "rs_peak": {
         "label": "RS Peak",
@@ -124,30 +127,27 @@ HEARTSOUND_DERIVED_GROUP_METADATA: dict[str, dict[str, str]] = {
     },
 }
 HEARTSOUND_DERIVED_METRIC_METADATA: dict[str, dict[str, str]] = {
-    "S1_Duration_ms": {"label": "S1 Duration", "unit": "ms"},
+    "S1_Width_ms": {"label": "S1 Width", "unit": "ms"},
     "S1_Peak_mV": {"label": "S1 Peak", "unit": "mV"},
     "S1_mean_mV": {"label": "S1 Mean", "unit": "mV"},
     "S1_RMS_mV": {"label": "S1 RMS", "unit": "mV"},
     "S1_Area_mVms": {"label": "S1 Area", "unit": "mV·ms"},
-    "S1_Middle_ms": {"label": "S1 Middle", "unit": "ms"},
-    "S1_S_centroid_pct": {"label": "S1_s Centroid", "unit": "%"},
-    "S1_E_centroid_pct": {"label": "S1_e Centroid", "unit": "%"},
-    "S2_Duration_ms": {"label": "S2 Duration", "unit": "ms"},
+    "S1_Sumation": {"label": "S1 Sumation", "unit": "ratio"},
+    "S2_Width_ms": {"label": "S2 Width", "unit": "ms"},
     "S2_Peak_mV": {"label": "S2 Peak", "unit": "mV"},
     "S2_mean_mV": {"label": "S2 Mean", "unit": "mV"},
     "S2_RMS_mV": {"label": "S2 RMS", "unit": "mV"},
     "S2_Area_mVms": {"label": "S2 Area", "unit": "mV·ms"},
-    "S2_Middle_ms": {"label": "S2 Middle", "unit": "ms"},
-    "S2_S_centroid_pct": {"label": "S2_s Centroid", "unit": "%"},
-    "S2_E_centroid_pct": {"label": "S2_e Centroid", "unit": "%"},
-    "S1S2_Duration_ms": {"label": "S1-S2 Duration", "unit": "ms"},
-    "S1S2_Peak_mV": {"label": "S1-S2 Peak", "unit": "mV"},
-    "S1S2_mean_mV": {"label": "S1-S2 Mean", "unit": "mV"},
-    "S1S2_Energy_mV2ms": {"label": "S1-S2 Energy", "unit": "mV²·ms"},
-    "S2S1_Duration_ms": {"label": "S2-S1 Duration", "unit": "ms"},
-    "S2S1_Peak_mV": {"label": "S2-S1 Peak", "unit": "mV"},
-    "S2S1_mean_mV": {"label": "S2-S1 Mean", "unit": "mV"},
-    "S2S1_Energy_mV2ms": {"label": "S2-S1 Energy", "unit": "mV²·ms"},
+    "S2_Sumation": {"label": "S2 Sumation", "unit": "ratio"},
+    "Systole_Duration_ms": {"label": "Systole Duration", "unit": "ms"},
+    "Systole_Peak_mV": {"label": "Systole Peak", "unit": "mV"},
+    "Systole_mean_mV": {"label": "Systole Mean", "unit": "mV"},
+    "Diastole_Duration_ms": {"label": "Diastole Duration", "unit": "ms"},
+    "Diastole_Peak_mV": {"label": "Diastole Peak", "unit": "mV"},
+    "Diastole_mean_mV": {"label": "Diastole Mean", "unit": "mV"},
+    "Diastole_S3_Expected_Delta_mV": {"label": "Diastole S3 Expected Delta", "unit": "mV"},
+    "Diastole_NaN_Gap_Delta_mV": {"label": "Diastole NaN Gap Delta", "unit": "mV"},
+    "Diastole_S4_Expected_Delta_mV": {"label": "Diastole S4 Expected Delta", "unit": "mV"},
     "S1S_RS_Peak": {"label": "S1_s RS Peak", "unit": "RS score"},
     "S1E_RS_Peak": {"label": "S1_e RS Peak", "unit": "RS score"},
     "S2S_RS_Peak": {"label": "S2_s RS Peak", "unit": "RS score"},
@@ -156,6 +156,10 @@ HEARTSOUND_DERIVED_METRIC_METADATA: dict[str, dict[str, str]] = {
     "S1E_RS_Width_ms": {"label": "S1_e RS Width", "unit": "ms"},
     "S2S_RS_Width_ms": {"label": "S2_s RS Width", "unit": "ms"},
     "S2E_RS_Width_ms": {"label": "S2_e RS Width", "unit": "ms"},
+    "S1S_RS_Sumation": {"label": "S1_s RS Sumation", "unit": "ratio"},
+    "S1E_RS_Sumation": {"label": "S1_e RS Sumation", "unit": "ratio"},
+    "S2S_RS_Sumation": {"label": "S2_s RS Sumation", "unit": "ratio"},
+    "S2E_RS_Sumation": {"label": "S2_e RS Sumation", "unit": "ratio"},
     "HeartRate_bpm": {"label": "HR", "unit": "bpm"},
 }
 PARAMETER_SUMMARY_GROUPS: list[tuple[str, str, list[str]]] = [
@@ -228,16 +232,31 @@ HEARTSOUND_PARAMETER_SUMMARY_GROUPS: list[tuple[str, str, list[str]]] = [
 HEARTSOUND_DERIVED_PARAMETER_SUMMARY_GROUPS: list[tuple[str, str, list[str]]] = [
     ("s1_parameters", "S1", HEARTSOUND_S1_PARAMETER_COLUMNS),
     ("s2_parameters", "S2", HEARTSOUND_S2_PARAMETER_COLUMNS),
-    ("s1_s2_relation", "S1-S2", HEARTSOUND_RELATION_PARAMETER_COLUMNS),
-    ("s2_s1_relation", "S2-S1", HEARTSOUND_NEXT_RELATION_PARAMETER_COLUMNS),
+    ("s1_s2_relation", "Systole", HEARTSOUND_RELATION_PARAMETER_COLUMNS),
+    ("s2_s1_relation", "Diastole", HEARTSOUND_NEXT_RELATION_PARAMETER_COLUMNS),
     ("rs_peak", "RS Peak", HEARTSOUND_RS_PEAK_PARAMETER_COLUMNS),
     ("rs_width", "RS Width", HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS),
+    ("rs_sumation", "RS Sumation", HEARTSOUND_RS_SUMATION_PARAMETER_COLUMNS),
     ("heart_rate", "HR", HEARTSOUND_HEART_RATE_COLUMNS),
 ]
 HEARTSOUND_REGION_THRESHOLD = 15.0
 HEARTSOUND_DEFAULT_CYCLE_SPACING = 4000
 HEARTSOUND_MAX_REGION_WIDTH_RATIO = 0.45
 HEARTSOUND_LOG_ENERGY_EPSILON = 1e-8
+HEARTSOUND_CANDIDATE_MIN_WINDOW_MULTIPLIER = 2
+HEARTSOUND_DIASTOLIC_WINDOW_MIN_DURATION_MS = 18.0
+HEARTSOUND_S3_WINDOW_CONFIG = {
+    "offset_start_ms": 120.0,
+    "offset_end_ms": 200.0,
+    "fallback_start_ratio": 0.18,
+    "fallback_end_ratio": 0.34,
+}
+HEARTSOUND_S4_WINDOW_CONFIG = {
+    "offset_start_ms": 200.0,
+    "offset_end_ms": 80.0,
+    "fallback_start_ratio": 0.72,
+    "fallback_end_ratio": 0.88,
+}
 
 
 class PlotDataNotFoundError(Exception):
@@ -534,6 +553,10 @@ def _nan_rs_width_parameter_row() -> dict[str, float]:
     return {column: np.nan for column in HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS}
 
 
+def _nan_rs_sumation_parameter_row() -> dict[str, float]:
+    return {column: np.nan for column in HEARTSOUND_RS_SUMATION_PARAMETER_COLUMNS}
+
+
 def _nan_heart_rate_row() -> dict[str, float]:
     return {column: np.nan for column in HEARTSOUND_HEART_RATE_COLUMNS}
 
@@ -565,14 +588,12 @@ def _compute_s1_parameter_row(amplitude: np.ndarray, start_index: int, end_index
         amplitude,
         start_index,
         end_index,
-        duration_key="S1_Duration_ms",
+        width_key="S1_Width_ms",
         peak_key="S1_Peak_mV",
         mean_key="S1_mean_mV",
         rms_key="S1_RMS_mV",
         area_key="S1_Area_mVms",
-        middle_key="S1_Middle_ms",
-        start_centroid_key="S1_S_centroid_pct",
-        end_centroid_key="S1_E_centroid_pct",
+        sumation_key="S1_Sumation",
         nan_factory=_nan_s1_parameter_row,
     )
 
@@ -582,14 +603,12 @@ def _compute_sound_parameter_row(
     start_index: int,
     end_index: int,
     *,
-    duration_key: str,
+    width_key: str,
     peak_key: str,
     mean_key: str,
     rms_key: str,
     area_key: str,
-    middle_key: str,
-    start_centroid_key: str,
-    end_centroid_key: str,
+    sumation_key: str,
     nan_factory: Callable[[], dict[str, float]],
 ) -> dict[str, float]:
     safe_start = max(0, int(start_index))
@@ -603,33 +622,16 @@ def _compute_sound_parameter_row(
 
     absolute_segment = np.abs(segment)
     total_absolute = float(np.sum(absolute_segment))
-    middle_index = (safe_start + safe_end) / 2.0
-    segment_last_index = float(safe_end - 1)
-
-    centroid_sample = np.nan
-    if total_absolute > 0.0:
-        sample_indices = np.arange(safe_start, safe_end, dtype=float)
-        centroid_denominator = float(np.sum(absolute_segment))
-        if centroid_denominator > 0.0:
-            centroid_sample = float(np.sum(sample_indices * absolute_segment) / centroid_denominator)
-
-    start_centroid_pct = np.nan
-    end_centroid_pct = np.nan
-    total_span = segment_last_index - safe_start
-    if np.isfinite(centroid_sample) and total_span > 0.0:
-        normalized_end_pct = ((centroid_sample - safe_start) / total_span) * 100.0
-        end_centroid_pct = float(min(100.0, max(0.0, normalized_end_pct)))
-        start_centroid_pct = float(100.0 - end_centroid_pct)
+    peak_value = float(np.max(absolute_segment))
+    sumation_value = float(peak_value / total_absolute) if total_absolute > 0.0 else float(np.nan)
 
     return {
-        duration_key: float((safe_end - safe_start) * HEARTSOUND_SAMPLE_MS),
-        peak_key: float(np.max(absolute_segment)),
+        width_key: float((safe_end - safe_start) * HEARTSOUND_SAMPLE_MS),
+        peak_key: peak_value,
         mean_key: float(np.mean(absolute_segment)),
         rms_key: float(np.sqrt(np.mean(segment ** 2))),
         area_key: float(np.sum(absolute_segment) * HEARTSOUND_SAMPLE_MS),
-        middle_key: float(middle_index * HEARTSOUND_SAMPLE_MS),
-        start_centroid_key: start_centroid_pct,
-        end_centroid_key: end_centroid_pct,
+        sumation_key: sumation_value,
     }
 
 
@@ -638,14 +640,12 @@ def _compute_s2_parameter_row(amplitude: np.ndarray, start_index: int, end_index
         amplitude,
         start_index,
         end_index,
-        duration_key="S2_Duration_ms",
+        width_key="S2_Width_ms",
         peak_key="S2_Peak_mV",
         mean_key="S2_mean_mV",
         rms_key="S2_RMS_mV",
         area_key="S2_Area_mVms",
-        middle_key="S2_Middle_ms",
-        start_centroid_key="S2_S_centroid_pct",
-        end_centroid_key="S2_E_centroid_pct",
+        sumation_key="S2_Sumation",
         nan_factory=_nan_s2_parameter_row,
     )
 
@@ -661,31 +661,29 @@ def _compute_relation_parameter_row(
         amplitude,
         start_index=s1_end_index,
         end_index=s2_start_index,
-        duration_key="S1S2_Duration_ms",
-        peak_key="S1S2_Peak_mV",
-        mean_key="S1S2_mean_mV",
-        energy_key="S1S2_Energy_mV2ms",
+        duration_key="Systole_Duration_ms",
+        peak_key="Systole_Peak_mV",
+        mean_key="Systole_mean_mV",
         nan_factory=_nan_relation_parameter_row,
     )
 
 
 def _compute_next_relation_parameter_row(
     amplitude: np.ndarray,
-    s2_start_index: int,
     s2_end_index: int,
     next_s1_start_index: int,
-    next_s1_end_index: int,
 ) -> dict[str, float]:
-    return _compute_gap_parameter_row(
+    row = _compute_gap_parameter_row(
         amplitude,
         start_index=s2_end_index,
         end_index=next_s1_start_index,
-        duration_key="S2S1_Duration_ms",
-        peak_key="S2S1_Peak_mV",
-        mean_key="S2S1_mean_mV",
-        energy_key="S2S1_Energy_mV2ms",
+        duration_key="Diastole_Duration_ms",
+        peak_key="Diastole_Peak_mV",
+        mean_key="Diastole_mean_mV",
         nan_factory=_nan_next_relation_parameter_row,
     )
+    row.update(_compute_diastolic_expected_delta_row(amplitude, s2_end_index, next_s1_start_index))
+    return row
 
 
 def _compute_gap_parameter_row(
@@ -696,7 +694,6 @@ def _compute_gap_parameter_row(
     duration_key: str,
     peak_key: str,
     mean_key: str,
-    energy_key: str,
     nan_factory: Callable[[], dict[str, float]],
 ) -> dict[str, float]:
     safe_start = min(len(amplitude), int(start_index))
@@ -709,13 +706,113 @@ def _compute_gap_parameter_row(
         return nan_factory()
 
     absolute_segment = np.abs(interval_segment)
-    energy_value = float(np.sum(interval_segment ** 2) * HEARTSOUND_SAMPLE_MS)
 
     return {
         duration_key: float((safe_end - safe_start) * HEARTSOUND_SAMPLE_MS),
         peak_key: float(np.max(absolute_segment)),
         mean_key: float(np.mean(absolute_segment)),
-        energy_key: energy_value,
+    }
+
+
+def _ms_to_heartsound_sample_count(duration_ms: float) -> int:
+    return max(1, int(round(duration_ms / HEARTSOUND_SAMPLE_MS)))
+
+
+def _resolve_diastolic_expected_window(
+    window_kind: str,
+    diastole_start: int,
+    diastole_end: int,
+    current_s2_end: int,
+    next_s1_start: int,
+) -> tuple[int, int] | None:
+    if diastole_end <= diastole_start:
+        return None
+
+    diastolic_length = diastole_end - diastole_start
+    minimum_window_length = _ms_to_heartsound_sample_count(
+        HEARTSOUND_DIASTOLIC_WINDOW_MIN_DURATION_MS * HEARTSOUND_CANDIDATE_MIN_WINDOW_MULTIPLIER
+    )
+    config = HEARTSOUND_S3_WINDOW_CONFIG if window_kind == "S3" else HEARTSOUND_S4_WINDOW_CONFIG
+
+    if window_kind == "S3":
+        default_start = current_s2_end + _ms_to_heartsound_sample_count(float(config["offset_start_ms"]))
+        default_end = current_s2_end + _ms_to_heartsound_sample_count(float(config["offset_end_ms"]))
+    else:
+        default_start = next_s1_start - _ms_to_heartsound_sample_count(float(config["offset_start_ms"]))
+        default_end = next_s1_start - _ms_to_heartsound_sample_count(float(config["offset_end_ms"]))
+
+    clipped_default_start = max(diastole_start, min(default_start, diastole_end))
+    clipped_default_end = max(clipped_default_start, min(default_end, diastole_end))
+    if clipped_default_end - clipped_default_start >= minimum_window_length:
+        return clipped_default_start, clipped_default_end
+
+    fallback_start = diastole_start + int(diastolic_length * float(config["fallback_start_ratio"]))
+    fallback_end = diastole_start + int(diastolic_length * float(config["fallback_end_ratio"]))
+    clipped_fallback_start = max(diastole_start, min(fallback_start, diastole_end))
+    clipped_fallback_end = max(clipped_fallback_start, min(fallback_end, diastole_end))
+    if clipped_fallback_end - clipped_fallback_start < minimum_window_length:
+        return None
+
+    return clipped_fallback_start, clipped_fallback_end
+
+
+def _compute_segment_delta_value(amplitude: np.ndarray, start_index: int, end_index: int) -> float:
+    safe_start = max(0, int(start_index))
+    safe_end = min(len(amplitude), int(end_index))
+    if amplitude.size == 0 or safe_end - safe_start < 2:
+        return float(np.nan)
+
+    segment = np.nan_to_num(amplitude[safe_start:safe_end].astype(float, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
+    if segment.size < 2:
+        return float(np.nan)
+
+    return float(np.mean(np.abs(np.diff(segment))))
+
+
+def _compute_diastolic_expected_delta_row(
+    amplitude: np.ndarray,
+    s2_end_index: int,
+    next_s1_start_index: int,
+) -> dict[str, float]:
+    diastole_start = int(s2_end_index) + 1
+    diastole_end = int(next_s1_start_index) - 1
+    if diastole_end <= diastole_start:
+        return {
+            "Diastole_S3_Expected_Delta_mV": float(np.nan),
+            "Diastole_NaN_Gap_Delta_mV": float(np.nan),
+            "Diastole_S4_Expected_Delta_mV": float(np.nan),
+        }
+
+    s3_window = _resolve_diastolic_expected_window(
+        "S3",
+        diastole_start,
+        diastole_end,
+        int(s2_end_index),
+        int(next_s1_start_index),
+    )
+    s4_window = _resolve_diastolic_expected_window(
+        "S4",
+        diastole_start,
+        diastole_end,
+        int(s2_end_index),
+        int(next_s1_start_index),
+    )
+
+    nan_gap_delta = float(np.nan)
+    if s3_window is not None and s4_window is not None:
+        gap_start = int(s3_window[1])
+        gap_end = int(s4_window[0])
+        if gap_end - gap_start >= 2:
+            nan_gap_delta = _compute_segment_delta_value(amplitude, gap_start, gap_end)
+
+    return {
+        "Diastole_S3_Expected_Delta_mV": _compute_segment_delta_value(amplitude, *s3_window)
+        if s3_window is not None
+        else float(np.nan),
+        "Diastole_NaN_Gap_Delta_mV": nan_gap_delta,
+        "Diastole_S4_Expected_Delta_mV": _compute_segment_delta_value(amplitude, *s4_window)
+        if s4_window is not None
+        else float(np.nan),
     }
 
 
@@ -751,17 +848,17 @@ def _get_rs_peak_value(signal: np.ndarray, event_index: int | None) -> float:
     return float(int(round(value)))
 
 
-def _get_rs_width_value(signal: np.ndarray, event_index: int | None) -> float:
+def _get_rs_width_bounds(signal: np.ndarray, event_index: int | None) -> tuple[int, int] | None:
     if event_index is None:
-        return float(np.nan)
+        return None
 
     safe_index = int(event_index)
     if safe_index < 0 or safe_index >= len(signal):
-        return float(np.nan)
+        return None
 
     peak_value = float(signal[safe_index])
     if not np.isfinite(peak_value) or peak_value <= 0.0:
-        return float(np.nan)
+        return None
 
     threshold = 0.5 * peak_value
     left_index = safe_index
@@ -779,9 +876,36 @@ def _get_rs_width_value(signal: np.ndarray, event_index: int | None) -> float:
         right_index += 1
 
     if left_index > right_index:
+        return None
+
+    return left_index, right_index
+
+
+def _get_rs_width_value(signal: np.ndarray, event_index: int | None) -> float:
+    bounds = _get_rs_width_bounds(signal, event_index)
+    if bounds is None:
         return float(np.nan)
 
+    left_index, right_index = bounds
     return float((right_index - left_index) * HEARTSOUND_SAMPLE_MS)
+
+
+def _get_rs_sumation_value(signal: np.ndarray, event_index: int | None) -> float:
+    bounds = _get_rs_width_bounds(signal, event_index)
+    if bounds is None:
+        return float(np.nan)
+
+    safe_index = int(event_index) if event_index is not None else -1
+    if safe_index < 0 or safe_index >= len(signal):
+        return float(np.nan)
+
+    left_index, right_index = bounds
+    segment = np.nan_to_num(signal[left_index : right_index + 1].astype(float, copy=False), nan=0.0, posinf=0.0, neginf=0.0)
+    total = float(np.sum(np.abs(segment)))
+    peak_value = float(signal[safe_index])
+    if total <= 0.0 or not np.isfinite(peak_value):
+        return float(np.nan)
+    return float(abs(peak_value) / total)
 
 
 def _compute_rs_peak_parameter_row(
@@ -832,6 +956,30 @@ def _compute_rs_width_parameter_row(
     }
 
 
+def _compute_rs_sumation_parameter_row(
+    s1_start_signal: np.ndarray,
+    s1_end_signal: np.ndarray,
+    s2_start_signal: np.ndarray,
+    s2_end_signal: np.ndarray,
+    s1_overlay: dict[str, Any],
+    s2_overlay: dict[str, Any] | None,
+) -> dict[str, float]:
+    if s2_overlay is None:
+        return _nan_rs_sumation_parameter_row()
+
+    s1_start_peak = s1_overlay.get("startPeak")
+    s1_end_peak = s1_overlay.get("endPeak")
+    s2_start_peak = s2_overlay.get("startPeak")
+    s2_end_peak = s2_overlay.get("endPeak")
+
+    return {
+        "S1S_RS_Sumation": _get_rs_sumation_value(s1_start_signal, s1_start_peak[0] if s1_start_peak else None),
+        "S1E_RS_Sumation": _get_rs_sumation_value(s1_end_signal, s1_end_peak[0] if s1_end_peak else None),
+        "S2S_RS_Sumation": _get_rs_sumation_value(s2_start_signal, s2_start_peak[0] if s2_start_peak else None),
+        "S2E_RS_Sumation": _get_rs_sumation_value(s2_end_signal, s2_end_peak[0] if s2_end_peak else None),
+    }
+
+
 def _empty_heartsound_parameter_frame() -> pd.DataFrame:
     columns = [
         "Filename",
@@ -848,6 +996,7 @@ def _empty_heartsound_parameter_frame() -> pd.DataFrame:
         *HEARTSOUND_NEXT_RELATION_PARAMETER_COLUMNS,
         *HEARTSOUND_RS_PEAK_PARAMETER_COLUMNS,
         *HEARTSOUND_RS_WIDTH_PARAMETER_COLUMNS,
+        *HEARTSOUND_RS_SUMATION_PARAMETER_COLUMNS,
         *HEARTSOUND_HEART_RATE_COLUMNS,
     ]
     return pd.DataFrame(columns=columns)
@@ -950,10 +1099,8 @@ def _build_heartsound_derived_parameter_frame(file_id: str, dataframe: pd.DataFr
                 row.update(
                     _compute_next_relation_parameter_row(
                         amplitude,
-                        int(s2_start),
                         int(s2_end),
                         next_s1_start,
-                        next_s1_end,
                     )
                 )
             else:
@@ -978,12 +1125,23 @@ def _build_heartsound_derived_parameter_frame(file_id: str, dataframe: pd.DataFr
                     matched_s2,
                 )
             )
+            row.update(
+                _compute_rs_sumation_parameter_row(
+                    s1_start_values,
+                    s1_end_values,
+                    s2_start_values,
+                    s2_end_values,
+                    s1_overlay,
+                    matched_s2,
+                )
+            )
         else:
             row.update(_nan_s2_parameter_row())
             row.update(_nan_relation_parameter_row())
             row.update(_nan_next_relation_parameter_row())
             row.update(_nan_rs_peak_parameter_row())
             row.update(_nan_rs_width_parameter_row())
+            row.update(_nan_rs_sumation_parameter_row())
         row.update(_compute_heart_rate_row(s1_start, next_s1_start))
         rows.append(row)
 

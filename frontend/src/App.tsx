@@ -335,6 +335,9 @@ interface HeartsoundCycleMeasurementContext {
   s1Overlay: HeartsoundRegionOverlay | null;
   s2Overlay: HeartsoundRegionOverlay | null;
   nextS1Overlay: HeartsoundRegionOverlay | null;
+  s3ExpectedWindow: { start: number; end: number } | null;
+  diastoleNaNGapWindow: { start: number; end: number } | null;
+  s4ExpectedWindow: { start: number; end: number } | null;
 }
 
 interface ParameterMeasurementAnnotation {
@@ -1739,7 +1742,7 @@ const getHeartsoundParameterTooltipContent = (
   if (/^S1_/.test(metricKey) || /^S2_/.test(metricKey)) {
     const isS1 = metricKey.startsWith("S1_");
     const prefix = isS1 ? "S1" : "S2";
-    if (/_Duration_ms$/.test(metricKey)) {
+    if (/_Width_ms$/.test(metricKey)) {
       return {
         title: metricLabel,
         summary: `${prefix} start에서 ${prefix} end까지`,
@@ -1774,25 +1777,11 @@ const getHeartsoundParameterTooltipContent = (
         schematic: `${prefix} 구간 ~ sum(|x[n]|) * 0.25`,
       };
     }
-    if (/_Middle_ms$/.test(metricKey)) {
+    if (/_Sumation$/.test(metricKey)) {
       return {
         title: metricLabel,
-        summary: `${prefix} start와 end의 중간점`,
-        schematic: `${prefix} start ~ middle ~ ${prefix} end`,
-      };
-    }
-    if (/_S_centroid_pct$/.test(metricKey)) {
-      return {
-        title: metricLabel,
-        summary: `${prefix} 중심의 start 쪽 치우침`,
-        schematic: `${prefix} start ~ centroid ~ middle`,
-      };
-    }
-    if (/_E_centroid_pct$/.test(metricKey)) {
-      return {
-        title: metricLabel,
-        summary: `${prefix} 중심의 end 쪽 치우침`,
-        schematic: `middle ~ centroid ~ ${prefix} end`,
+        summary: `${prefix} 구간의 sharpness 집중도, 1에 가까울수록 날카롭고 0에 가까울수록 퍼짐`,
+        schematic: `${prefix} peak / sum(|x[n]|)`,
       };
     }
   }
@@ -1813,23 +1802,45 @@ const getHeartsoundParameterTooltipContent = (
     };
   }
 
+  if (/^S1[SE]_RS_Sumation$|^S2[SE]_RS_Sumation$/.test(metricKey)) {
+    return {
+      title: metricLabel,
+      summary: "RS event local 구간의 sharpness 집중도",
+      schematic: "RS peak / sum(local RS)",
+    };
+  }
+
   switch (metricKey) {
-    case "S1S2_Duration_ms":
+    case "Systole_Duration_ms":
       return { title: metricLabel, summary: "S1 end에서 S2 start까지", schematic: "S1 end ~ S2 start" };
-    case "S1S2_Peak_mV":
-      return { title: metricLabel, summary: "S1-S2 구간의 최대 |x|", schematic: "S1 end ~ S2 start ~ |x| max" };
-    case "S1S2_mean_mV":
-      return { title: metricLabel, summary: "S1-S2 구간의 평균 |x|", schematic: "S1 end ~ S2 start ~ mean(|x[n]|)" };
-    case "S1S2_Energy_mV2ms":
-      return { title: metricLabel, summary: "S1-S2 구간의 에너지", schematic: "S1 end ~ S2 start ~ sum(x[n]^2) * 0.25" };
-    case "S2S1_Duration_ms":
+    case "Systole_Peak_mV":
+      return { title: metricLabel, summary: "Systole 구간의 최대 |x|", schematic: "S1 end ~ S2 start ~ |x| max" };
+    case "Systole_mean_mV":
+      return { title: metricLabel, summary: "Systole 구간의 평균 |x|", schematic: "S1 end ~ S2 start ~ mean(|x[n]|)" };
+    case "Diastole_Duration_ms":
       return { title: metricLabel, summary: "S2 end에서 다음 S1 start까지", schematic: "S2 end ~ next S1 start" };
-    case "S2S1_Peak_mV":
-      return { title: metricLabel, summary: "S2-S1 구간의 최대 |x|", schematic: "S2 end ~ next S1 start ~ |x| max" };
-    case "S2S1_mean_mV":
-      return { title: metricLabel, summary: "S2-S1 구간의 평균 |x|", schematic: "S2 end ~ next S1 start ~ mean(|x[n]|)" };
-    case "S2S1_Energy_mV2ms":
-      return { title: metricLabel, summary: "S2-S1 구간의 에너지", schematic: "S2 end ~ next S1 start ~ sum(x[n]^2) * 0.25" };
+    case "Diastole_Peak_mV":
+      return { title: metricLabel, summary: "Diastole 구간의 최대 |x|", schematic: "S2 end ~ next S1 start ~ |x| max" };
+    case "Diastole_mean_mV":
+      return { title: metricLabel, summary: "Diastole 구간의 평균 |x|", schematic: "S2 end ~ next S1 start ~ mean(|x[n]|)" };
+    case "Diastole_S3_Expected_Delta_mV":
+      return {
+        title: metricLabel,
+        summary: "Diastole 내 S3 예상 구간의 평균 변화량",
+        schematic: "S3 expected window ~ mean(|x[n] - x[n-1]|)",
+      };
+    case "Diastole_NaN_Gap_Delta_mV":
+      return {
+        title: metricLabel,
+        summary: "S3 예상 구간과 S4 예상 구간 사이 NaN gap의 평균 변화량",
+        schematic: "S3 expected ~ gap ~ S4 expected",
+      };
+    case "Diastole_S4_Expected_Delta_mV":
+      return {
+        title: metricLabel,
+        summary: "Diastole 내 S4 예상 구간의 평균 변화량",
+        schematic: "S4 expected window ~ mean(|x[n] - x[n-1]|)",
+      };
     default:
       return null;
   }
@@ -1845,7 +1856,8 @@ const buildParameterMeasurementAnnotation = (
     s2End: Map<number, number>;
   }
 ): ParameterMeasurementAnnotation | null => {
-  const { s1Overlay, s2Overlay, nextS1Overlay } = cycleContext;
+  const { s1Overlay, s2Overlay, nextS1Overlay, s3ExpectedWindow, diastoleNaNGapWindow, s4ExpectedWindow } =
+    cycleContext;
   if (!s1Overlay) {
     return null;
   }
@@ -1892,16 +1904,35 @@ const buildParameterMeasurementAnnotation = (
   }
 
   switch (metricKey) {
-    case "S1S2_Duration_ms":
-    case "S1S2_Peak_mV":
-    case "S1S2_mean_mV":
-    case "S1S2_Energy_mV2ms":
+    case "Systole_Duration_ms":
+    case "Systole_Peak_mV":
+    case "Systole_mean_mV":
       return createRange("S1 end -> S2 start", "#f97316", s1End, s2Start);
-    case "S2S1_Duration_ms":
-    case "S2S1_Peak_mV":
-    case "S2S1_mean_mV":
-    case "S2S1_Energy_mV2ms":
+    case "Diastole_Duration_ms":
+    case "Diastole_Peak_mV":
+    case "Diastole_mean_mV":
       return createRange("S2 end -> next S1 start", "#22c55e", s2End, nextS1Start);
+    case "Diastole_S3_Expected_Delta_mV":
+      return createRange(
+        "S3 expected window",
+        "#ef4444",
+        s3ExpectedWindow?.start ?? null,
+        s3ExpectedWindow?.end ?? null
+      );
+    case "Diastole_NaN_Gap_Delta_mV":
+      return createRange(
+        "S3-S4 NaN gap",
+        "#94a3b8",
+        diastoleNaNGapWindow?.start ?? null,
+        diastoleNaNGapWindow?.end ?? null
+      );
+    case "Diastole_S4_Expected_Delta_mV":
+      return createRange(
+        "S4 expected window",
+        "#0ea5e9",
+        s4ExpectedWindow?.start ?? null,
+        s4ExpectedWindow?.end ?? null
+      );
     case "HeartRate_bpm":
       return createRange("Cycle -> Cycle", "#f9c74a", s1Start, nextS1Start);
     case "S1S_RS_Peak":
@@ -1916,17 +1947,33 @@ const buildParameterMeasurementAnnotation = (
       const bounds = getRsWidthBounds(rsLookups.s1Start, s1Overlay.startPeak?.[0]);
       return createRange("S1 start RS width", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
     }
+    case "S1S_RS_Sumation": {
+      const bounds = getRsWidthBounds(rsLookups.s1Start, s1Overlay.startPeak?.[0]);
+      return createRange("S1 start RS local span", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
     case "S1E_RS_Width_ms": {
       const bounds = getRsWidthBounds(rsLookups.s1End, s1Overlay.endPeak?.[0]);
       return createRange("S1 end RS width", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    case "S1E_RS_Sumation": {
+      const bounds = getRsWidthBounds(rsLookups.s1End, s1Overlay.endPeak?.[0]);
+      return createRange("S1 end RS local span", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
     }
     case "S2S_RS_Width_ms": {
       const bounds = getRsWidthBounds(rsLookups.s2Start, s2Overlay?.startPeak?.[0]);
       return createRange("S2 start RS width", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
     }
+    case "S2S_RS_Sumation": {
+      const bounds = getRsWidthBounds(rsLookups.s2Start, s2Overlay?.startPeak?.[0]);
+      return createRange("S2 start RS local span", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
     case "S2E_RS_Width_ms": {
       const bounds = getRsWidthBounds(rsLookups.s2End, s2Overlay?.endPeak?.[0]);
       return createRange("S2 end RS width", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
+    }
+    case "S2E_RS_Sumation": {
+      const bounds = getRsWidthBounds(rsLookups.s2End, s2Overlay?.endPeak?.[0]);
+      return createRange("S2 end RS local span", "#ff7b72", bounds?.[0] ?? null, bounds?.[1] ?? null);
     }
     default:
       return null;
@@ -2399,10 +2446,12 @@ const PanelCard = memo(function PanelCard({
 
     const rsPeakGroup = findGroup("rs_peak");
     const rsWidthGroup = findGroup("rs_width");
+    const rsSumationGroup = findGroup("rs_sumation");
     const rsScoreGroup = mergeParameterGroupMetrics(
       [
         rsPeakGroup ?? null,
         rsWidthGroup ?? null,
+        rsSumationGroup ?? null,
       ],
       "rs_score",
       "RS Score"
@@ -2427,8 +2476,8 @@ const PanelCard = memo(function PanelCard({
       },
       {
         key: "relation",
-        title: "S1-S2",
-        subtitle: "S1-S2와 S2-S1 gap 구간에서 계산된 값",
+        title: "Diastole / Systole",
+        subtitle: "Systole와 Diastole 구간에서 계산된 값",
         toneClassName: "is-relation",
         groups: compactGroups([findGroup("s1_s2_relation") ?? null, findGroup("s2_s1_relation") ?? null]),
         metrics: [],
@@ -3262,10 +3311,42 @@ const PanelCard = memo(function PanelCard({
                 return true;
               }) ?? null;
 
+            const diastoleStart = s2Overlay ? s2Overlay.areaEnd + 1 : null;
+            const diastoleEnd = nextS1Overlay ? nextS1Overlay.areaStart - 1 : null;
+            const s3ExpectedWindow =
+              s2Overlay && nextS1Overlay && diastoleStart !== null && diastoleEnd !== null
+                ? resolveDiastolicCandidateWindow(
+                    "S3",
+                    diastoleStart,
+                    diastoleEnd,
+                    s2Overlay.areaEnd,
+                    nextS1Overlay.areaStart,
+                    heartsoundSampleRate
+                  )
+                : null;
+            const s4ExpectedWindow =
+              s2Overlay && nextS1Overlay && diastoleStart !== null && diastoleEnd !== null
+                ? resolveDiastolicCandidateWindow(
+                    "S4",
+                    diastoleStart,
+                    diastoleEnd,
+                    s2Overlay.areaEnd,
+                    nextS1Overlay.areaStart,
+                    heartsoundSampleRate
+                  )
+                : null;
+            const diastoleNaNGapWindow =
+              s3ExpectedWindow && s4ExpectedWindow && s4ExpectedWindow.start > s3ExpectedWindow.end
+                ? { start: s3ExpectedWindow.end, end: s4ExpectedWindow.start }
+                : null;
+
             return {
               s1Overlay,
               s2Overlay,
               nextS1Overlay,
+              s3ExpectedWindow,
+              diastoleNaNGapWindow,
+              s4ExpectedWindow,
             };
           })()
         : null;
@@ -4420,71 +4501,85 @@ const PanelCard = memo(function PanelCard({
                         {workspaceKind === "heartsound" &&
                         (parameterSummary.cycles?.length ?? 0) > 0 &&
                         displayedParameterGroups.length > 0 ? (
-                          <div className="parameter-cycle-toolbar">
-                            <div className="parameter-cycle-field">
-                              <span className="parameter-cycle-label">Cycle</span>
-                              <div className="parameter-cycle-stepper" role="group" aria-label="Cycle navigation">
-                                <button
-                                  type="button"
-                                  className="parameter-cycle-stepper-button"
-                                  aria-label="Previous cycle"
-                                  title="Previous cycle"
-                                  disabled={selectedCycleOffset <= 0}
-                                  onClick={() => {
-                                    const previousCycle = parameterCycles[selectedCycleOffset - 1];
-                                    if (previousCycle) {
-                                      onSelectCycle(panel.panelId, previousCycle.cycleIndex);
+                          <div className="parameter-cycle-dashboard">
+                            <div className="parameter-cycle-toolbar">
+                              <div className="parameter-cycle-field">
+                                <span className="parameter-cycle-label">Cycle</span>
+                                <div className="parameter-cycle-stepper" role="group" aria-label="Cycle navigation">
+                                  <button
+                                    type="button"
+                                    className="parameter-cycle-stepper-button"
+                                    aria-label="Previous cycle"
+                                    title="Previous cycle"
+                                    disabled={selectedCycleOffset <= 0}
+                                    onClick={() => {
+                                      const previousCycle = parameterCycles[selectedCycleOffset - 1];
+                                      if (previousCycle) {
+                                        onSelectCycle(panel.panelId, previousCycle.cycleIndex);
+                                      }
+                                    }}
+                                  >
+                                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                                      <path
+                                        d="M10.5 3.5 6 8l4.5 4.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="1.8"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                    </svg>
+                                  </button>
+                                  <div className="parameter-cycle-current">
+                                    {selectedCycle ? `Cycle ${selectedCycle.cycleIndex}` : "-"}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="parameter-cycle-stepper-button"
+                                    aria-label="Next cycle"
+                                    title="Next cycle"
+                                    disabled={
+                                      selectedCycleOffset < 0 || selectedCycleOffset >= parameterCycles.length - 1
                                     }
-                                  }}
-                                >
-                                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                                    <path
-                                      d="M10.5 3.5 6 8l4.5 4.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="1.8"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    />
-                                  </svg>
-                                </button>
-                                <div className="parameter-cycle-current">
-                                  {selectedCycle ? `Cycle ${selectedCycle.cycleIndex}` : "-"}
+                                    onClick={() => {
+                                      const nextCycle = parameterCycles[selectedCycleOffset + 1];
+                                      if (nextCycle) {
+                                        onSelectCycle(panel.panelId, nextCycle.cycleIndex);
+                                      }
+                                    }}
+                                  >
+                                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                                      <path
+                                        d="M5.5 3.5 10 8l-4.5 4.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        strokeWidth="1.8"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                    </svg>
+                                  </button>
                                 </div>
-                                <button
-                                  type="button"
-                                  className="parameter-cycle-stepper-button"
-                                  aria-label="Next cycle"
-                                  title="Next cycle"
-                                  disabled={
-                                    selectedCycleOffset < 0 || selectedCycleOffset >= parameterCycles.length - 1
-                                  }
-                                  onClick={() => {
-                                    const nextCycle = parameterCycles[selectedCycleOffset + 1];
-                                    if (nextCycle) {
-                                      onSelectCycle(panel.panelId, nextCycle.cycleIndex);
-                                    }
-                                  }}
-                                >
-                                  <svg viewBox="0 0 16 16" aria-hidden="true">
-                                    <path
-                                      d="M5.5 3.5 10 8l-4.5 4.5"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      strokeWidth="1.8"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    />
-                                  </svg>
-                                </button>
+                              </div>
+                              <div className="parameter-cycle-dashboard-meta">
+                                <div className="parameter-cycle-dashboard-chip">
+                                  <span className="parameter-cycle-dashboard-chip-label">Span</span>
+                                  <span className="parameter-cycle-dashboard-chip-value">
+                                    {selectedCycle
+                                      ? `${formatRowNumber(selectedCycle.startIndex)} - ${formatRowNumber(
+                                          selectedCycle.endIndex
+                                        )}`
+                                      : "-"}
+                                  </span>
+                                </div>
+                                <div className="parameter-cycle-dashboard-chip">
+                                  <span className="parameter-cycle-dashboard-chip-label">Pool</span>
+                                  <span className="parameter-cycle-dashboard-chip-value">
+                                    {parameterCycles.length} cycles
+                                  </span>
+                                </div>
                               </div>
                             </div>
-                            {selectedCycle ? (
-                              <div className="parameter-cycle-range">
-                                highlight {formatRowNumber(selectedCycle.startIndex)} -{" "}
-                                {formatRowNumber(selectedCycle.endIndex)}
-                              </div>
-                            ) : null}
                             {heartRateMetric ? (
                               (() => {
                                 const heartRateTooltip = getHeartsoundParameterTooltipContent(
@@ -4537,22 +4632,32 @@ const PanelCard = memo(function PanelCard({
                                 className={`heartsound-parameter-section ${section.toneClassName}`}
                               >
                                 <div className="heartsound-parameter-section-header">
-                                  <div className="heartsound-parameter-section-title">{section.title}</div>
+                                  <div className="heartsound-parameter-section-title-row">
+                                    <div className="heartsound-parameter-section-title">{section.title}</div>
+                                    <div className="heartsound-parameter-section-count">
+                                      {section.groups.reduce((count, group) => count + group.metrics.length, 0)}
+                                    </div>
+                                  </div>
                                   <div className="heartsound-parameter-section-subtitle">{section.subtitle}</div>
                                 </div>
                                 <div className="heartsound-parameter-section-body">
                                   {section.groups.map((group) => (
                                     <div key={group.key} className="heartsound-parameter-block">
-                                      {section.groups.length > 1 && section.key !== "relation" ? (
-                                        <div
-                                          className={`heartsound-parameter-block-title${
-                                            group.key.startsWith("rs_score") ? " is-rs-score" : ""
-                                          }`}
-                                        >
-                                          {group.label}
+                                      {section.groups.length > 1 || section.key === "relation" ? (
+                                        <div className="heartsound-parameter-block-head">
+                                          <div
+                                            className={`heartsound-parameter-block-title${
+                                              group.key.startsWith("rs_score") ? " is-rs-score" : ""
+                                            }`}
+                                          >
+                                            {group.label}
+                                          </div>
+                                          <div className="heartsound-parameter-block-count">
+                                            {group.metrics.length}
+                                          </div>
                                         </div>
                                       ) : null}
-                                      <div className="heartsound-parameter-metric-grid">
+                                      <div className="heartsound-parameter-metric-list">
                                         {group.metrics.map((metric) => {
                                           const metricUnit = metric.unit ?? getParameterMetricUnit(metric.key);
                                           const metricTooltip = getHeartsoundParameterTooltipContent(
@@ -4563,13 +4668,26 @@ const PanelCard = memo(function PanelCard({
                                             <button
                                               key={metric.key}
                                               type="button"
-                                              className={`heartsound-parameter-metric-card${
+                                              className={`heartsound-parameter-metric-row${
                                                 selectedParameterMetricKey === metric.key ? " is-active" : ""
                                               }`}
                                               onClick={() => onSelectParameterMetric(panel.panelId, metric.key)}
                                             >
-                                              <div className="heartsound-parameter-metric-name">{metric.label}</div>
-                                              <div className="heartsound-parameter-metric-value-row">
+                                              <div className="heartsound-parameter-metric-main">
+                                                <div className="heartsound-parameter-metric-name">{metric.label}</div>
+                                                <div className="heartsound-parameter-metric-kicker">
+                                                  {metric.min === metric.max
+                                                    ? "single range"
+                                                    : `${formatHeartsoundParameterMetricValue(
+                                                        metric.min,
+                                                        metric.key
+                                                      )} - ${formatHeartsoundParameterMetricValue(
+                                                        metric.max,
+                                                        metric.key
+                                                      )}`}
+                                                </div>
+                                              </div>
+                                              <div className="heartsound-parameter-metric-value-cluster">
                                                 <div className="heartsound-parameter-metric-value">
                                                   {formatHeartsoundParameterMetricValue(metric.mean, metric.key)}
                                                 </div>
